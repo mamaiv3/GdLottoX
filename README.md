@@ -6,7 +6,8 @@ cross-analysis, superbase, dan pautan promosi telah dibuang. Yang tinggal
 hanya perkara teras:
 
 1. **🧮 Formula Break** — jana base P1–P4 + backtest prestasi sebenar
-2. **🎡 Wheelpick** — jana & tapis kombinasi 4D daripada base
+2. **🎡 Wheelpick** — jana & tapis kombinasi 4D daripada base (auto, gabung
+   hari ini + semalam, atau manual) + Top 10 pilihan terbaik
 3. **📋 Data Draw** — data sokongan (sejarah keputusan, tambah/kemas kini)
 4. **📊 Dashboard** — insight ringkas draw terakhir & digit like/dislike
 
@@ -42,6 +43,15 @@ Tab **Backtest** dalam Formula Break menguji base ini terhadap draw
 lepas secara adil — base untuk draw ke-*i* hanya dijana daripada draw
 **sebelum** draw ke-*i*, supaya tiada maklumat masa depan bocor ke
 dalam ujian.
+
+## 🔗 Gabung 2 Base (Wheelpick)
+
+Di tab Wheelpick, pilihan sumber base "Gabung 2 Base (Hari ini +
+Semalam)" akan jana base hari ini (semua draw terkini) dan base
+semalam (draw terkini tanpa draw paling akhir), kemudian gabungkan
+kedua-duanya ikut posisi (P1–P4) — digit unik dari kedua-dua base
+dikumpul jadi satu senarai (tiada pendua), cth: `12345` + `23456` →
+`123456`.
 
 ## ▶️ Cara Jalankan
 

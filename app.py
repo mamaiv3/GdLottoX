@@ -23,6 +23,7 @@ from core.formula_break import (
     DEFAULT_RECENT_N,
     backtest_break,
     check_against_base,
+    combine_bases,
     generate_break_base,
 )
 from core.wheelpick import filter_wheel_combos, generate_wheel_combos, get_like_dislike_digits, rank_combos
@@ -166,7 +167,11 @@ with tab_wheel:
     user_dislike = st.text_input("Digit Dislike:", value=" ".join(dislike), key="wp_dislike")
     likes, dislikes = user_like.split(), user_dislike.split()
 
-    input_mode = st.radio("Sumber Base:", ["Auto — Formula Break", "Manual"], key="wp_mode")
+    input_mode = st.radio(
+        "Sumber Base:",
+        ["Auto — Formula Break", "Gabung 2 Base (Hari ini + Semalam)", "Manual"],
+        key="wp_mode",
+    )
 
     base_wp = None
     if input_mode == "Auto — Formula Break":
@@ -178,6 +183,27 @@ with tab_wheel:
             )
             try:
                 base_wp = generate_break_base(draws, recent_n=recent_wp)
+                st.code("\n".join(" ".join(p) for p in base_wp), language="text")
+            except ValueError as e:
+                st.error(str(e))
+    elif input_mode == "Gabung 2 Base (Hari ini + Semalam)":
+        if len(draws) < 21:
+            st.warning("⚠️ Data draw terlalu sedikit (<21) untuk jana base hari ini & semalam.")
+        else:
+            recent_combo = st.slider(
+                "Jumlah draw untuk base:",
+                20, len(draws) - 1, min(DEFAULT_RECENT_N, len(draws) - 1), 5, key="wp_combo_n",
+            )
+            try:
+                base_today = generate_break_base(draws, recent_n=recent_combo)
+                base_yesterday = generate_break_base(draws[:-1], recent_n=recent_combo)
+                base_wp = combine_bases(base_today, base_yesterday)
+
+                st.markdown("**📅 Base Hari Ini:**")
+                st.code("\n".join(" ".join(p) for p in base_today), language="text")
+                st.markdown("**📆 Base Semalam:**")
+                st.code("\n".join(" ".join(p) for p in base_yesterday), language="text")
+                st.markdown("**🔗 Base Gabungan (dipakai untuk Wheelpick):**")
                 st.code("\n".join(" ".join(p) for p in base_wp), language="text")
             except ValueError as e:
                 st.error(str(e))
