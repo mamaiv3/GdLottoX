@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from core.data_draw import (
+    DRAW_FILE,
     add_draw,
     get_draw_countdown_from_last_8pm,
     load_draws,
@@ -22,6 +23,7 @@ from core.formula_break import (
     DEFAULT_RANK_RANGE,
     DEFAULT_RECENT_N,
     backtest_break,
+    backtest_combined,
     check_against_base,
     combine_bases,
     generate_break_base,
@@ -81,16 +83,19 @@ tab_dash, tab_break, tab_wheel, tab_data = st.tabs(
 with tab_dash:
     st.subheader("📌 Insight Draw Terakhir")
 
-    enough_for_dashboard = len(draws) - 1 >= DEFAULT_RECENT_N
-    if not enough_for_dashboard:
+    need_single = DEFAULT_RECENT_N + 1
+    need_combined = DEFAULT_RECENT_N + 2
+
+    if len(draws) < need_single:
         st.info(
-            f"ℹ️ Perlu sekurang-kurangnya {DEFAULT_RECENT_N + 1} draw untuk papar insight "
+            f"ℹ️ Perlu sekurang-kurangnya {need_single} draw untuk papar insight "
             f"(ada {len(draws)}). Tambah draw di tab **📋 Data Draw**."
         )
     else:
-        base_prev = generate_break_base(draws[:-1], recent_n=DEFAULT_RECENT_N)
-        flags = check_against_base(last_draw["number"], base_prev)
+        base_today_prev = generate_break_base(draws[:-1], recent_n=DEFAULT_RECENT_N)
 
+        st.markdown("**🧮 Semakan Base Tunggal (Formula Break)**")
+        flags = check_against_base(last_draw["number"], base_today_prev)
         cols = st.columns(4)
         for i, col in enumerate(cols):
             digit = last_draw["number"][i]
@@ -98,10 +103,29 @@ with tab_dash:
             mark = "✅" if flags[i] else "❌"
             col.markdown(card(f"P{i + 1}", f"{mark} {digit}", css_class), unsafe_allow_html=True)
 
+        st.write("")
+
+        if len(draws) < need_combined:
+            st.info(
+                f"ℹ️ Perlu sekurang-kurangnya {need_combined} draw untuk papar semakan "
+                f"Base Gabungan (ada {len(draws)})."
+            )
+        else:
+            base_yesterday_prev = generate_break_base(draws[:-2], recent_n=DEFAULT_RECENT_N)
+            combined_prev = combine_bases(base_today_prev, base_yesterday_prev)
+
+            st.markdown("**🔗 Semakan Base Gabungan (2 Base)**")
+            flags2 = check_against_base(last_draw["number"], combined_prev)
+            cols2 = st.columns(4)
+            for i, col in enumerate(cols2):
+                digit = last_draw["number"][i]
+                css_class = "badge-hit" if flags2[i] else "badge-miss"
+                mark = "✅" if flags2[i] else "❌"
+                col.markdown(card(f"P{i + 1}", f"{mark} {digit}", css_class), unsafe_allow_html=True)
+
         st.markdown(
-            '<div class="bc4d-note">Base di atas dikira menggunakan draw '
-            '<strong>sebelum</strong> keputusan terakhir — supaya semakan ini adil '
-            "(tiada maklumat masa depan bocor).</div>",
+            '<div class="bc4d-note">Kedua-dua semakan di atas dikira menggunakan draw '
+            '<strong>sebelum</strong> keputusan terakhir — supaya adil (tiada maklumat masa depan bocor).</div>',
             unsafe_allow_html=True,
         )
 
@@ -143,11 +167,19 @@ with tab_break:
             st.code("\n".join(" ".join(p) for p in base), language="text")
 
             with st.expander("🔁 Backtest Formula Break — uji prestasi sebenar"):
+                bt_mode = st.radio(
+                    "Kaedah:", ["Base Tunggal", "Base Gabungan (2 Base)"], horizontal=True, key="bt_mode"
+                )
                 rounds = st.slider("Bilangan draw lepas untuk diuji:", 5, 50, 10, 5, key="bt_rounds")
                 if st.button("🚀 Jalankan Backtest", key="bt_run"):
-                    records, full_match, hit_rate = backtest_break(
-                        draws, recent_n=recent_n, rounds=rounds, rank_range=rank_range
-                    )
+                    if bt_mode == "Base Tunggal":
+                        records, full_match, hit_rate = backtest_break(
+                            draws, recent_n=recent_n, rounds=rounds, rank_range=rank_range
+                        )
+                    else:
+                        records, full_match, hit_rate = backtest_combined(
+                            draws, recent_n=recent_n, rounds=rounds, rank_range=rank_range
+                        )
                     if records:
                         st.success(f"🎯 Match penuh (4/4 posisi): {full_match} / {len(records)} draw  →  **{hit_rate}%**")
                         st.dataframe(pd.DataFrame(records), use_container_width=True)
@@ -306,6 +338,16 @@ with tab_data:
             st.rerun()
 
     st.markdown("---")
-    st.markdown(f"**📜 Senarai Draw** (jumlah: {len(draws)})")
+    col_list, col_dl = st.columns([3, 1])
+    col_list.markdown(f"**📜 Senarai Draw** (jumlah: {len(draws)})")
+    draws_txt_path = Path(DRAW_FILE)
+    if draws_txt_path.exists():
+        col_dl.download_button(
+            "💾 Muat Turun draws.txt",
+            data=draws_txt_path.read_bytes(),
+            file_name="draws.txt",
+            mime="text/plain",
+            key="dl_draws_txt",
+        )
     df_draws = pd.DataFrame(draws[::-1])
     st.dataframe(df_draws, use_container_width=True, height=420)
