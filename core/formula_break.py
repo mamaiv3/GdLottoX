@@ -45,6 +45,28 @@ def check_against_base(number: str, base: list[list[str]]) -> list[bool]:
     return [digits[i] in base[i] for i in range(4)]
 
 
+def combine_bases(base_a: list[list[str]], base_b: list[list[str]]) -> list[list[str]]:
+    """
+    Gabungkan dua base 4-posisi (cth: base hari ini + base semalam) jadi
+    satu base gabungan.
+
+    Bagi setiap posisi (P1–P4): digit dari `base_a` dikekalkan dahulu
+    ikut susunan asal, diikuti digit dari `base_b` yang belum ada
+    (tiada pendua). Cth: "12345" gabung "23456" -> "123456".
+    """
+    if len(base_a) != 4 or len(base_b) != 4:
+        raise ValueError("Kedua-dua base mesti ada tepat 4 posisi (P1–P4).")
+
+    combined = []
+    for i in range(4):
+        merged = list(dict.fromkeys(base_a[i]))  # kekal susunan asal, buang pendua dalaman
+        for digit in base_b[i]:
+            if digit not in merged:
+                merged.append(digit)
+        combined.append(merged)
+    return combined
+
+
 def backtest_break(
     draws: list[dict],
     recent_n: int = DEFAULT_RECENT_N,
