@@ -74,7 +74,8 @@ def backtest_break(
     rank_range: tuple[int, int] = DEFAULT_RANK_RANGE,
 ) -> tuple[list[dict], int, float]:
     """
-    Uji prestasi sebenar Formula Break terhadap `rounds` draw yang lepas.
+    Uji prestasi sebenar Formula Break (base tunggal) terhadap `rounds`
+    draw yang lepas.
 
     Untuk setiap draw yang diuji, base dijana HANYA daripada draw
     SEBELUM draw tersebut — supaya tiada maklumat masa depan 'bocor'
@@ -90,6 +91,55 @@ def backtest_break(
             break
         try:
             base = generate_break_base(past, recent_n, rank_range)
+        except ValueError:
+            continue
+
+        flags = check_against_base(test_draw["number"], base)
+        is_full = all(flags)
+        if is_full:
+            full_match += 1
+
+        records.append({
+            "Tarikh": test_draw["date"],
+            "Nombor": test_draw["number"],
+            "P1": "✅" if flags[0] else "❌",
+            "P2": "✅" if flags[1] else "❌",
+            "P3": "✅" if flags[2] else "❌",
+            "P4": "✅" if flags[3] else "❌",
+            "Match Penuh": "🎯 Ya" if is_full else "—",
+        })
+
+    records.reverse()
+    hit_rate = round(full_match / len(records) * 100, 2) if records else 0.0
+    return records, full_match, hit_rate
+
+
+def backtest_combined(
+    draws: list[dict],
+    recent_n: int = DEFAULT_RECENT_N,
+    rounds: int = 10,
+    rank_range: tuple[int, int] = DEFAULT_RANK_RANGE,
+) -> tuple[list[dict], int, float]:
+    """
+    Uji prestasi Base Gabungan (Hari Ini + Semalam) terhadap `rounds`
+    draw yang lepas — konsep sama adil seperti `backtest_break`.
+
+    Untuk draw yang diuji, "base hari ini" & "base semalam" kedua-duanya
+    dijana HANYA daripada draw SEBELUM draw tersebut (base semalam guna
+    satu draw lebih awal lagi), lalu digabungkan sebelum disemak.
+    """
+    records = []
+    full_match = 0
+
+    for i in range(1, rounds + 1):
+        test_draw = draws[-i]
+        past = draws[:-i]
+        if len(past) < recent_n + 1:
+            break
+        try:
+            base_today = generate_break_base(past, recent_n, rank_range)
+            base_yesterday = generate_break_base(past[:-1], recent_n, rank_range)
+            base = combine_bases(base_today, base_yesterday)
         except ValueError:
             continue
 
