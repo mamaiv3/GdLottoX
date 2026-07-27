@@ -30,7 +30,7 @@ from core.formula_break import (
 )
 from core.wheelpick import filter_wheel_combos, generate_wheel_combos, get_like_dislike_digits, rank_combos
 
-st.set_page_config(page_title="Breakcode4D — Formula Break", page_icon="🔮", layout="wide")
+st.set_page_config(page_title="Breakcode4D — GD Lotto", page_icon="🔮", layout="wide")
 
 
 def load_css() -> None:
@@ -51,8 +51,8 @@ load_css()
 st.markdown(
     """
     <div class="bc4d-header">
-        <h1>🔮 Breakcode4D — Formula Break</h1>
-        <p>Fokus penuh pada Formula Break &amp; Wheelpick Generator untuk 4D.</p>
+        <h1>🔮 Breakcode4D — GD Lotto Pick</h1>
+        <p>Fokus penuh pada Formula Break &amp; Wheelpick Generator untuk GD4D.</p>
     </div>
     """,
     unsafe_allow_html=True,
