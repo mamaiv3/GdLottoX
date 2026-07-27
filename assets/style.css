@@ -1,87 +1,189 @@
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
 
 html, body, [class*="css"] {
     font-family: 'Poppins', sans-serif;
 }
 
-/* ===== Background ===== */
+/* ===== Page shell ===== */
 .stApp {
     background: radial-gradient(circle at top left, #1b1035 0%, #0d0a1f 55%, #060512 100%);
     color: #f1eefc;
+}
+.block-container {
+    padding-top: 1.4rem;
+    padding-bottom: 2.5rem;
+    max-width: 900px;
 }
 
 /* ===== Header banner ===== */
 .bc4d-header {
     background: linear-gradient(120deg, #7b2ff7 0%, #f107a3 100%);
-    padding: 1.5rem 1.8rem;
-    border-radius: 18px;
-    margin-bottom: 1.3rem;
-    box-shadow: 0 10px 26px rgba(123, 47, 247, 0.35);
+    padding: 1.1rem 1.4rem;
+    border-radius: 16px;
+    margin-bottom: 1rem;
+    box-shadow: 0 10px 26px rgba(123, 47, 247, 0.32);
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+.bc4d-header .emoji {
+    font-size: 1.9rem;
+    line-height: 1;
 }
 .bc4d-header h1 {
     margin: 0;
-    font-size: 1.9rem;
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: #ffffff;
+    letter-spacing: 0.01em;
+    line-height: 1.25;
+}
+.bc4d-header p {
+    margin: 0.15rem 0 0;
+    color: rgba(255,255,255,0.85);
+    font-size: 0.8rem;
+    line-height: 1.3;
+}
+
+/* ===== Section titles (replaces plain st.subheader) ===== */
+.bc4d-section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 0.2rem 0 0.55rem;
+}
+.bc4d-section-title .icon {
+    flex: none;
+    width: 1.9rem;
+    height: 1.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    border-radius: 9px;
+    background: linear-gradient(135deg, #7b2ff7, #f107a3);
+    box-shadow: 0 4px 10px rgba(123, 47, 247, 0.32);
+}
+.bc4d-section-title .text {
+    font-size: 1rem;
     font-weight: 700;
     color: #ffffff;
     letter-spacing: 0.01em;
 }
-.bc4d-header p {
-    margin: 0.3rem 0 0;
-    color: rgba(255,255,255,0.88);
-    font-size: 0.96rem;
+.bc4d-section-sub {
+    font-size: 0.78rem;
+    color: #a89dd6;
+    margin: -0.3rem 0 0.6rem 2.45rem;
+    line-height: 1.35;
 }
 
-/* ===== Metric / info cards ===== */
+/* ===== Divider (thinner than st default "---") ===== */
+.bc4d-divider {
+    height: 1px;
+    background: linear-gradient(90deg, rgba(123,47,247,0) 0%, rgba(123,47,247,0.45) 50%, rgba(241,7,163,0) 100%);
+    margin: 1.1rem 0;
+    border: none;
+}
+
+/* ===== Grid of metric cards ===== */
+.bc4d-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(var(--min-card, 118px), 1fr));
+    gap: 0.55rem;
+    margin-bottom: 0.7rem;
+}
 .bc4d-card {
     background: rgba(255,255,255,0.05);
     border: 1px solid rgba(255,255,255,0.09);
-    border-radius: 14px;
-    padding: 1rem 1.1rem;
+    border-radius: 13px;
+    padding: 0.65rem 0.5rem;
     text-align: center;
-    backdrop-filter: blur(6px);
-    margin-bottom: 0.6rem;
 }
 .bc4d-card .label {
-    font-size: 0.76rem;
+    font-size: 0.66rem;
     color: #b8aee0;
     text-transform: uppercase;
-    letter-spacing: 0.07em;
+    letter-spacing: 0.06em;
     font-weight: 600;
+    white-space: nowrap;
 }
 .bc4d-card .value {
-    font-size: 1.55rem;
+    font-size: 1.2rem;
     font-weight: 700;
     color: #ffffff;
-    margin-top: 0.25rem;
+    margin-top: 0.2rem;
 }
+
+/* ===== Digit-check chips (P1-P4 rows) ===== */
+.bc4d-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-bottom: 0.5rem;
+}
+.bc4d-chip {
+    flex: 1 1 68px;
+    min-width: 64px;
+    background: rgba(255,255,255,0.045);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 0.5rem 0.2rem;
+    text-align: center;
+}
+.bc4d-chip .pos {
+    font-size: 0.62rem;
+    color: #a89dd6;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+}
+.bc4d-chip .digit {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin-top: 0.15rem;
+    color: #ffffff;
+}
+.bc4d-chip.hit {
+    border-color: rgba(46, 230, 168, 0.45);
+    background: rgba(46, 230, 168, 0.08);
+}
+.bc4d-chip.hit .digit { color: #2ee6a8; }
+.bc4d-chip.miss {
+    border-color: rgba(255, 101, 132, 0.35);
+    background: rgba(255, 101, 132, 0.06);
+}
+.bc4d-chip.miss .digit { color: #ff6584; }
 
 .badge-hit { color: #2ee6a8 !important; }
 .badge-miss { color: #ff6584 !important; }
 
-/* ===== Section caption ===== */
+/* ===== Note / callout ===== */
 .bc4d-note {
     background: rgba(123, 47, 247, 0.12);
     border-left: 3px solid #f107a3;
-    padding: 0.7rem 1rem;
+    padding: 0.6rem 0.85rem;
     border-radius: 8px;
-    font-size: 0.9rem;
+    font-size: 0.82rem;
     color: #e5defc;
-    margin-bottom: 0.9rem;
+    margin: 0.4rem 0 0.9rem;
+    line-height: 1.4;
 }
 
 /* ===== Tabs ===== */
 .stTabs [data-baseweb="tab-list"] {
-    gap: 6px;
+    gap: 4px;
 }
 .stTabs [data-baseweb="tab"] {
     background: rgba(255,255,255,0.045);
     border-radius: 10px 10px 0 0;
-    padding: 0.55rem 1.1rem;
+    padding: 0.5rem 0.85rem;
     color: #cfc6ee;
+    font-size: 0.85rem;
 }
 .stTabs [aria-selected="true"] {
     background: linear-gradient(120deg, #7b2ff7 0%, #f107a3 100%) !important;
     color: #ffffff !important;
+    font-weight: 600;
 }
 
 /* ===== Buttons ===== */
@@ -91,13 +193,18 @@ html, body, [class*="css"] {
     border: none;
     border-radius: 10px;
     font-weight: 600;
-    padding: 0.5rem 1.3rem;
+    padding: 0.5rem 1.2rem;
     transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 .stButton>button:hover, .stDownloadButton>button:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 18px rgba(241, 7, 163, 0.4);
     color: #ffffff;
+}
+
+/* ===== Inputs / sliders tighten ===== */
+.stSlider, .stTextInput, .stTextArea, .stRadio, .stSelectSlider {
+    margin-bottom: -0.4rem;
 }
 
 /* ===== Dataframe ===== */
@@ -109,4 +216,10 @@ html, body, [class*="css"] {
 /* ===== Code blocks (base / wheelpick output) ===== */
 .stCodeBlock, code {
     border-radius: 10px !important;
+}
+
+/* ===== Expander ===== */
+[data-testid="stExpander"] {
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
 }
