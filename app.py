@@ -30,9 +30,10 @@ from core.formula_break import (
 )
 from core.wheelpick import filter_wheel_combos, generate_wheel_combos, get_like_dislike_digits, rank_combos
 
-st.set_page_config(page_title="Breakcode4D — GD Lotto", page_icon="🔮", layout="wide")
+st.set_page_config(page_title="Breakcode4D — Formula Break", page_icon="🔮", layout="wide")
 
 
+# ============================================================== HELPERS ===
 def load_css() -> None:
     css_path = Path(__file__).parent / "assets" / "style.css"
     if css_path.exists():
@@ -46,13 +47,48 @@ def card(label: str, value: str, css_class: str = "") -> str:
     )
 
 
+def card_grid(cards_html: list[str], min_width: int = 118) -> str:
+    return f'<div class="bc4d-grid" style="--min-card:{min_width}px">{"".join(cards_html)}</div>'
+
+
+def chip(pos: str, digit: str, state: str = "") -> str:
+    cls = f" {state}" if state else ""
+    return f'<div class="bc4d-chip{cls}"><div class="pos">{pos}</div><div class="digit">{digit}</div></div>'
+
+
+def chip_row(chips_html: list[str]) -> str:
+    return f'<div class="bc4d-chip-row">{"".join(chips_html)}</div>'
+
+
+def section_title(icon: str, text: str, subtitle: str = "") -> None:
+    sub = f'<div class="bc4d-section-sub">{subtitle}</div>' if subtitle else ""
+    st.markdown(
+        f'<div class="bc4d-section-title"><span class="icon">{icon}</span>'
+        f'<span class="text">{text}</span></div>{sub}',
+        unsafe_allow_html=True,
+    )
+
+
+def divider() -> None:
+    st.markdown('<hr class="bc4d-divider" />', unsafe_allow_html=True)
+
+
+def digit_chips(number: str, flags: list[bool]) -> None:
+    chips = [chip(f"P{i + 1}", number[i], "hit" if flags[i] else "miss") for i in range(4)]
+    st.markdown(chip_row(chips), unsafe_allow_html=True)
+
+
+# ================================================================== PAGE ===
 load_css()
 
 st.markdown(
     """
     <div class="bc4d-header">
-        <h1>🔮 Breakcode4D — GD Lotto Pick</h1>
-        <p>Fokus penuh pada Formula Break &amp; Wheelpick Generator untuk GD4D.</p>
+        <div class="emoji">🔮</div>
+        <div>
+            <h1>Breakcode4D — Formula Break</h1>
+            <p>Fokus penuh pada Formula Break &amp; Wheelpick Generator untuk 4D.</p>
+        </div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -67,13 +103,15 @@ if not draws:
 last_draw = draws[-1]
 countdown = str(get_draw_countdown_from_last_8pm()).split(".")[0]
 
-m1, m2, m3, m4 = st.columns(4)
-m1.markdown(card("⏳ Draw Seterusnya", countdown), unsafe_allow_html=True)
-m2.markdown(card("📅 Draw Terakhir", last_draw["date"]), unsafe_allow_html=True)
-m3.markdown(card("🎯 Keputusan Terakhir", last_draw["number"]), unsafe_allow_html=True)
-m4.markdown(card("📊 Jumlah Draw", str(len(draws))), unsafe_allow_html=True)
-
-st.write("")
+st.markdown(
+    card_grid([
+        card("⏳ Draw Seterusnya", countdown),
+        card("📅 Draw Terakhir", last_draw["date"]),
+        card("🎯 Keputusan Terakhir", last_draw["number"]),
+        card("📊 Jumlah Draw", str(len(draws))),
+    ]),
+    unsafe_allow_html=True,
+)
 
 tab_dash, tab_break, tab_wheel, tab_data = st.tabs(
     ["📊 Dashboard", "🧮 Formula Break", "🎡 Wheelpick", "📋 Data Draw"]
@@ -81,7 +119,7 @@ tab_dash, tab_break, tab_wheel, tab_data = st.tabs(
 
 # ============================================================= DASHBOARD ===
 with tab_dash:
-    st.subheader("📌 Insight Draw Terakhir")
+    section_title("📌", "Insight Draw Terakhir")
 
     need_single = DEFAULT_RECENT_N + 1
     need_combined = DEFAULT_RECENT_N + 2
@@ -94,34 +132,22 @@ with tab_dash:
     else:
         base_today_prev = generate_break_base(draws[:-1], recent_n=DEFAULT_RECENT_N)
 
-        st.markdown("**🧮 Semakan Base Tunggal (Formula Break)**")
+        st.markdown("**🧮 Base Tunggal (Formula Break)**")
         flags = check_against_base(last_draw["number"], base_today_prev)
-        cols = st.columns(4)
-        for i, col in enumerate(cols):
-            digit = last_draw["number"][i]
-            css_class = "badge-hit" if flags[i] else "badge-miss"
-            mark = "✅" if flags[i] else "❌"
-            col.markdown(card(f"P{i + 1}", f"{mark} {digit}", css_class), unsafe_allow_html=True)
-
-        st.write("")
+        digit_chips(last_draw["number"], flags)
 
         if len(draws) < need_combined:
             st.info(
-                f"ℹ️ Perlu sekurang-kurangnya {need_combined} draw untuk papar semakan "
+                f"ℹ️ Perlu sekurang-kurangnya {need_combined} draw untuk semakan "
                 f"Base Gabungan (ada {len(draws)})."
             )
         else:
             base_yesterday_prev = generate_break_base(draws[:-2], recent_n=DEFAULT_RECENT_N)
             combined_prev = combine_bases(base_today_prev, base_yesterday_prev)
 
-            st.markdown("**🔗 Semakan Base Gabungan (2 Base)**")
+            st.markdown("**🔗 Base Gabungan (2 Base)**")
             flags2 = check_against_base(last_draw["number"], combined_prev)
-            cols2 = st.columns(4)
-            for i, col in enumerate(cols2):
-                digit = last_draw["number"][i]
-                css_class = "badge-hit" if flags2[i] else "badge-miss"
-                mark = "✅" if flags2[i] else "❌"
-                col.markdown(card(f"P{i + 1}", f"{mark} {digit}", css_class), unsafe_allow_html=True)
+            digit_chips(last_draw["number"], flags2)
 
         st.markdown(
             '<div class="bc4d-note">Kedua-dua semakan di atas dikira menggunakan draw '
@@ -129,21 +155,24 @@ with tab_dash:
             unsafe_allow_html=True,
         )
 
-    st.markdown("---")
-    st.subheader("👍 Like / 👎 Dislike Digit")
-    st.caption("Digit paling kerap & paling jarang keluar dalam 30 draw terkini — rujukan untuk Wheelpick.")
+    divider()
+    section_title("👍", "Like / Dislike Digit", "Digit paling kerap &amp; paling jarang dalam 30 draw terkini.")
     like, dislike = get_like_dislike_digits(draws)
-    l1, l2 = st.columns(2)
-    l1.markdown(card("👍 Like", " ".join(like) or "—"), unsafe_allow_html=True)
-    l2.markdown(card("👎 Dislike", " ".join(dislike) or "—"), unsafe_allow_html=True)
+    st.markdown(
+        card_grid(
+            [card("👍 Like", " ".join(like) or "—"), card("👎 Dislike", " ".join(dislike) or "—")],
+            min_width=140,
+        ),
+        unsafe_allow_html=True,
+    )
 
 # ========================================================== FORMULA BREAK ===
 with tab_break:
-    st.subheader("🧮 Formula Break — Jana Base")
+    section_title("🧮", "Formula Break — Jana Base")
     st.markdown(
-        '<div class="bc4d-note">Formula Break ambil digit <strong>rank ke-6 hingga ke-10</strong> '
-        "paling kerap keluar bagi setiap posisi (P1–P4) — bukan digit yang paling 'panas'. "
-        "Andaian: digit yang sudah agak sejuk ini berpotensi 'break' masuk giliran seterusnya.</div>",
+        '<div class="bc4d-note">Ambil digit <strong>rank ke-6 hingga ke-10</strong> paling kerap '
+        "keluar bagi setiap posisi (P1–P4) — bukan digit yang paling 'panas'. Andaian: digit yang "
+        "sudah agak sejuk ini berpotensi 'break' masuk giliran seterusnya.</div>",
         unsafe_allow_html=True,
     )
 
@@ -166,7 +195,7 @@ with tab_break:
             st.markdown("**🔢 Base Formula Break (boleh salin):**")
             st.code("\n".join(" ".join(p) for p in base), language="text")
 
-            with st.expander("🔁 Backtest Formula Break — uji prestasi sebenar"):
+            with st.expander("🔁 Backtest — uji prestasi sebenar"):
                 bt_mode = st.radio(
                     "Kaedah:", ["Base Tunggal", "Base Gabungan (2 Base)"], horizontal=True, key="bt_mode"
                 )
@@ -181,8 +210,10 @@ with tab_break:
                             draws, recent_n=recent_n, rounds=rounds, rank_range=rank_range
                         )
                     if records:
-                        st.success(f"🎯 Match penuh (4/4 posisi): {full_match} / {len(records)} draw  →  **{hit_rate}%**")
-                        st.dataframe(pd.DataFrame(records), use_container_width=True)
+                        st.success(
+                            f"🎯 Match penuh (4/4 posisi): {full_match} / {len(records)} draw  →  **{hit_rate}%**"
+                        )
+                        st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
                     else:
                         st.warning("Data tidak mencukupi untuk backtest dengan tetapan ini.")
         except ValueError as e:
@@ -190,7 +221,7 @@ with tab_break:
 
 # ================================================================ WHEELPICK ===
 with tab_wheel:
-    st.subheader("🎡 Wheelpick Generator")
+    section_title("🎡", "Wheelpick Generator")
 
     arah_wp = st.radio("Arah susunan:", ["Kiri→Kanan", "Kanan→Kiri"], horizontal=True, key="wp_dir")
 
@@ -288,12 +319,8 @@ with tab_wheel:
                     mime="text/plain",
                 )
 
-                st.markdown("---")
-                st.subheader("🏆 Top 10 Pilihan")
-                st.caption(
-                    f"Disusun ikut kekerapan sebenar digit P1–P4 dalam {score_n} draw terkini "
-                    "— skor lebih tinggi bermaksud kombinasi itu lebih sepadan dengan corak terkini."
-                )
+                divider()
+                section_title("🏆", "Top 10 Pilihan", f"Disusun ikut kekerapan sebenar digit P1–P4 dalam {score_n} draw terkini.")
                 top10 = rank_combos(filtered, draws, recent_n=score_n, top_n=10)
                 st.dataframe(pd.DataFrame(top10), use_container_width=True, hide_index=True)
 
@@ -313,8 +340,7 @@ with tab_wheel:
 
 # ================================================================ DATA DRAW ===
 with tab_data:
-    st.subheader("📋 Data Draw")
-    st.caption("Sumber data mentah untuk Formula Break & Wheelpick.")
+    section_title("📋", "Data Draw", "Sumber data mentah untuk Formula Break &amp; Wheelpick.")
 
     d1, d2 = st.columns(2)
     with d1:
@@ -337,17 +363,17 @@ with tab_data:
             st.info(msg)
             st.rerun()
 
-    st.markdown("---")
+    divider()
     col_list, col_dl = st.columns([3, 1])
     col_list.markdown(f"**📜 Senarai Draw** (jumlah: {len(draws)})")
     draws_txt_path = Path(DRAW_FILE)
     if draws_txt_path.exists():
         col_dl.download_button(
-            "💾 Muat Turun draws.txt",
+            "💾 draws.txt",
             data=draws_txt_path.read_bytes(),
             file_name="draws.txt",
             mime="text/plain",
             key="dl_draws_txt",
         )
     df_draws = pd.DataFrame(draws[::-1])
-    st.dataframe(df_draws, use_container_width=True, height=420)
+    st.dataframe(df_draws, use_container_width=True, height=420, hide_index=True)
