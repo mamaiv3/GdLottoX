@@ -86,8 +86,8 @@ st.markdown(
     <div class="bc4d-header">
         <div class="emoji">🔮</div>
         <div>
-            <h1>Breakcode4D — Formula Break</h1>
-            <p>Fokus penuh pada Formula Break &amp; Wheelpick Generator untuk 4D.</p>
+            <h1>Breakcode4D — GD Lotto 4D</h1>
+            <p>Fokus penuh pada Formula Break &amp; Wheelpick Generator untuk GD4D.</p>
         </div>
     </div>
     """,
