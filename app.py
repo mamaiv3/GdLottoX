@@ -7,7 +7,9 @@ Fokus penuh pada:
   3. Data Draw      — data sokongan (sejarah keputusan)
 """
 
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
@@ -78,6 +80,62 @@ def digit_chips(number: str, flags: list[bool]) -> None:
     st.markdown(chip_row(chips), unsafe_allow_html=True)
 
 
+def gold_base_card(base: list[list[str]], rank_start: int, rank_end: int, kombinasi: str, date_label: str) -> str:
+    """Kad 'Base Draw' bergaya gold/black — ringkasan P1-P4 + kombinasi utama."""
+    n_rows = max(len(p) for p in base)
+    rows_html = []
+    for row_i in range(n_rows):
+        rank_no = rank_start + row_i
+        cells = "".join(f"<td>{p[row_i] if row_i < len(p) else '—'}</td>" for p in base)
+        cls = ' class="gld-pick"' if row_i == 0 else ""
+        rows_html.append(f"<tr{cls}><td>R{rank_no}</td>{cells}</tr>")
+
+    return f"""
+    <div class="gld-card">
+        <div class="gld-ribbon">BASE DRAW</div>
+        <div class="gld-hero">
+            <div class="gld-date">{date_label}</div>
+            <div class="gld-seal"><span>4D</span></div>
+        </div>
+        <div class="gld-headline">BREAKCODE BASE DRAW</div>
+        <div class="gld-subline">Formula Break &middot; rank {rank_start}&ndash;{rank_end} &middot; {n_rows} digit/posisi</div>
+        <table class="gld-table">
+            <tr><th></th><th>P1</th><th>P2</th><th>P3</th><th>P4</th></tr>
+            {"".join(rows_html)}
+        </table>
+        <div class="gld-combo">
+            <span class="lbl">🏆 Kombinasi Utama</span>
+            <span class="num">{kombinasi}</span>
+        </div>
+        <div class="gld-caption">Base ikut corak statistik draw lepas sahaja — bukan jaminan keputusan. 4D permainan nasib, mainlah secara bertanggungjawab.</div>
+    </div>
+    """
+
+
+def gold_top10_card(top10: list[dict]) -> str:
+    """Kad senarai Top 10 kombinasi bergaya gold/black, disusun ikut skor."""
+    if not top10:
+        return '<div class="gld-card"><div class="gld-caption">Tiada kombinasi untuk dipaparkan.</div></div>'
+
+    max_score = max(r["Skor"] for r in top10) or 1
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    rows = []
+    for r in top10:
+        rank = r["Rank"]
+        badge = medals.get(rank, str(rank))
+        cls = f" gld-rank{rank}" if rank in medals else ""
+        pct = round(r["Skor"] / max_score * 100)
+        rows.append(
+            f'<div class="gld-top-row{cls}">'
+            f'<div class="gld-rank-badge">{badge}</div>'
+            f'<div class="gld-top-main"><div class="gld-top-num">{r["Nombor"]}</div>'
+            f'<div class="gld-bar-track"><div class="gld-bar-fill" style="width:{pct}%"></div></div></div>'
+            f'<div class="gld-top-score"><div class="v">{r["Skor"]}</div><div class="l">{r["Lot"]}</div></div>'
+            f"</div>"
+        )
+    return f'<div class="gld-card"><div class="gld-section-lbl">🏆 TOP 10 SET</div>{"".join(rows)}</div>'
+
+
 # ================================================================== PAGE ===
 load_css()
 
@@ -113,8 +171,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_dash, tab_break, tab_wheel, tab_data = st.tabs(
-    ["📊 Dashboard", "🧮 Formula Break", "🎡 Wheelpick", "📋 Data Draw"]
+tab_dash, tab_base, tab_break, tab_wheel, tab_data = st.tabs(
+    ["📊 Dashboard", "🔮 Base", "🧮 Formula Break", "🎡 Wheelpick", "📋 Data Draw"]
 )
 
 # ============================================================= DASHBOARD ===
@@ -165,6 +223,75 @@ with tab_dash:
         ),
         unsafe_allow_html=True,
     )
+
+# ===================================================================== BASE ===
+with tab_base:
+    section_title("🔮", "Base Draw — Kad Kongsi", "Ringkasan Base + Top 10, siap salin/muat turun untuk Telegram.")
+
+    if len(draws) < DEFAULT_RECENT_N:
+        st.info(
+            f"ℹ️ Perlu sekurang-kurangnya {DEFAULT_RECENT_N} draw untuk jana kad ini "
+            f"(ada {len(draws)}). Tambah draw di tab **📋 Data Draw**."
+        )
+    else:
+        with st.expander("⚙️ Tetapan"):
+            bc1, bc2 = st.columns(2)
+            base_recent_n = bc1.slider(
+                "Jumlah draw terkini:", 20, len(draws), min(DEFAULT_RECENT_N, len(draws)), 5, key="base_n"
+            )
+            base_rank_range = bc2.select_slider(
+                "Julat rank digit:", options=list(range(1, 11)), value=DEFAULT_RANK_RANGE, key="base_rank"
+            )
+            bc3, bc4 = st.columns(2)
+            base_lot = bc3.text_input("Nilai Lot:", value="0.10", key="base_lot")
+            base_score_n = bc4.slider(
+                "Draw untuk kira skor Top 10:",
+                min(10, len(draws)), len(draws), min(DEFAULT_RECENT_N, len(draws)), 5, key="base_score_n",
+            )
+
+        try:
+            base = generate_break_base(draws, recent_n=base_recent_n, rank_range=base_rank_range)
+        except ValueError as e:
+            st.error(str(e))
+            base = None
+
+        if base:
+            kombinasi_utama = "".join(p[0] for p in base)
+            date_label = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).strftime("%d/%m")
+            rank_start, rank_end = base_rank_range
+
+            st.markdown(
+                gold_base_card(base, rank_start, rank_end, kombinasi_utama, date_label),
+                unsafe_allow_html=True,
+            )
+
+            combos = generate_wheel_combos(base, lot=base_lot)
+            top10 = rank_combos(combos, draws, recent_n=base_score_n, top_n=10)
+            st.markdown(gold_top10_card(top10), unsafe_allow_html=True)
+
+            lines = [f"🔮 BASE DRAW — {date_label}"]
+            for i, p in enumerate(base):
+                lines.append(f"P{i + 1}: {' '.join(p)}")
+            lines.append(f"Kombinasi Utama: {kombinasi_utama}")
+            if top10:
+                lines.append("")
+                lines.append("🏆 TOP 10 SET")
+                lines.extend(f"{r['Rank']}. {r['Nombor']} #####{r['Lot']}  (skor {r['Skor']})" for r in top10)
+            share_text = "\n".join(lines)
+
+            divider()
+            st.markdown("**📋 Teks Salin (untuk Telegram)** — guna ikon salin di kad di bawah:")
+            st.code(share_text, language="text")
+
+            st.download_button(
+                "💾 Muat Turun Base + Top 10",
+                data=share_text.encode(),
+                file_name=f"base_{date_label.replace('/', '-')}.txt",
+                mime="text/plain",
+                key="dl_base_card",
+            )
+        else:
+            st.info("ℹ️ Tidak dapat jana base dengan tetapan semasa.")
 
 # ========================================================== FORMULA BREAK ===
 with tab_break:
