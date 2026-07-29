@@ -130,6 +130,7 @@ def render_base_image(
     kombinasi: str,
     date_label: str,
     result_handle: str = "@Breakcode4d",
+    hot_digits: set[str] | None = None,
 ) -> bytes:
     """Lukis kad 'Base Draw' (gold/black) sebagai PNG sebenar — boleh muat turun atau screenshot terus."""
     W, H = 1000, 1300
@@ -139,8 +140,7 @@ def render_base_image(
     CREAM = (231, 220, 184)
     MUTED = (138, 124, 80)
     DARK_TXT = (18, 14, 6)
-    SILVER = (210, 212, 222)
-    BRONZE = (198, 149, 94)
+    hot = hot_digits or set()
 
     img = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(img)
@@ -206,20 +206,23 @@ def render_base_image(
         _center_text(draw, cx, y + header_h / 2 + 2, lbl, f_th, DARK_TXT)
 
     row_y = y + header_h
-    tiers = {0: GOLD_LT, 1: SILVER, 2: BRONZE}
+    badge_w, badge_h = 76, 60
     for row_i in range(n_rows):
         rank_no = rank_start + row_i
-        tier_bg = tiers.get(row_i)
-        row_box = (table_x0, row_y, table_x1, row_y + row_h)
-        if tier_bg:
-            draw.rectangle(row_box, fill=tier_bg)
-        rank_col = DARK_TXT if tier_bg else MUTED
-        _center_text(draw, table_x0 + lbl_w / 2, row_y + row_h / 2 + 2, f"R{rank_no}", f_rank, rank_col)
+        cy = row_y + row_h / 2
+        _center_text(draw, table_x0 + lbl_w / 2, cy + 2, f"R{rank_no}", f_rank, MUTED)
         for i, p in enumerate(base):
             digit = p[row_i] if row_i < len(p) else "\u2014"
             cx = table_x0 + lbl_w + col_w * i + col_w / 2
-            col = DARK_TXT if tier_bg else CREAM
-            _center_text(draw, cx, row_y + row_h / 2 + 2, digit, f_cell, col)
+            if digit in hot:
+                _rounded(
+                    draw,
+                    (cx - badge_w / 2, cy - badge_h / 2, cx + badge_w / 2, cy + badge_h / 2),
+                    14, fill=GOLD_LT,
+                )
+                _center_text(draw, cx, cy + 2, digit, f_cell, DARK_TXT)
+            else:
+                _center_text(draw, cx, cy + 2, digit, f_cell, CREAM)
         draw.line((table_x0, row_y + row_h, table_x1, row_y + row_h), fill=(212, 175, 55, 40), width=1)
         row_y += row_h
 
@@ -363,6 +366,10 @@ with tab_base:
                 min(10, len(draws)), len(draws), min(DEFAULT_RECENT_N, len(draws)), 5, key="base_score_n",
             )
             result_handle = st.text_input("Channel/Result handle:", value="@Breakcode4d", key="base_result_handle")
+            hot_digits_input = st.text_input(
+                "Nombor top hari ini (pisah dengan koma):",
+                value="", placeholder="cth: 4,9,2", key="base_hot_digits",
+            )
 
         try:
             base = generate_break_base(draws, recent_n=base_recent_n, rank_range=base_rank_range)
@@ -375,7 +382,8 @@ with tab_base:
             date_label = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).strftime("%d/%m")
             rank_start, rank_end = base_rank_range
 
-            png_bytes = render_base_image(base, rank_start, rank_end, kombinasi_utama, date_label, result_handle)
+            hot_digits = {d.strip() for d in hot_digits_input.split(",") if d.strip().isdigit() and len(d.strip()) == 1}
+            png_bytes = render_base_image(base, rank_start, rank_end, kombinasi_utama, date_label, result_handle, hot_digits)
             st.image(png_bytes, use_container_width=True)
             st.download_button(
                 "🖼️ Muat Turun Gambar Base (PNG)",
