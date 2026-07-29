@@ -243,60 +243,6 @@ html, body, [class*="css"] {
     background: radial-gradient(circle, rgba(212,175,55,0.16) 0%, transparent 70%);
     pointer-events: none;
 }
-.gld-ribbon {
-    display: inline-block;
-    background: linear-gradient(120deg, #d4af37, #f4e2a1, #d4af37);
-    color: #1a1408; font-weight: 800; font-size: 0.68rem;
-    letter-spacing: 0.08em; padding: 4px 10px; border-radius: 6px;
-    margin-bottom: 10px; position: relative; z-index: 1;
-}
-.gld-hero { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: relative; z-index: 1; }
-.gld-date {
-    font-family: 'Poppins', sans-serif;
-    font-size: 2.5rem; font-weight: 700; line-height: 1;
-    background: linear-gradient(160deg, #f4e2a1 0%, #d4af37 45%, #9a7b1f 100%);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-}
-.gld-seal {
-    flex: none; width: 52px; height: 52px; border-radius: 50%;
-    border: 2px solid #d4af37;
-    display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 0 16px rgba(212,175,55,0.32), inset 0 0 8px rgba(212,175,55,0.15);
-}
-.gld-seal span { font-weight: 700; font-size: 0.82rem; color: #f4e2a1; }
-.gld-headline {
-    font-size: 0.88rem; font-weight: 800; letter-spacing: 0.03em; color: #f4e2a1;
-    margin: 8px 0 2px; position: relative; z-index: 1;
-}
-.gld-subline { font-size: 0.66rem; color: #a89768; margin-bottom: 12px; position: relative; z-index: 1; }
-
-.gld-table { width: 100%; border-collapse: collapse; position: relative; z-index: 1; margin-bottom: 2px; }
-.gld-table th {
-    font-size: 0.72rem; font-weight: 700; color: #1a1408;
-    background: linear-gradient(120deg, #d4af37, #f4e2a1);
-    padding: 7px 0; text-align: center;
-}
-.gld-table th:first-child { border-radius: 8px 0 0 0; }
-.gld-table th:last-child { border-radius: 0 8px 0 0; }
-.gld-table td {
-    text-align: center; padding: 8px 0;
-    font-family: 'Poppins', sans-serif; font-size: 0.95rem; font-weight: 700;
-    color: #e7dcb8;
-    border-bottom: 1px solid rgba(212,175,55,0.14);
-}
-.gld-table td:first-child { font-size: 0.66rem; font-weight: 600; color: #8a7c50; }
-.gld-table tr.gld-pick td { color: #0d0a05; background: linear-gradient(120deg, #f4e2a1, #d4af37); font-size: 1.05rem; }
-.gld-table tr.gld-pick td:first-child { color: #1a1408; font-weight: 700; }
-
-.gld-combo {
-    margin-top: 10px; position: relative; z-index: 1;
-    background: rgba(0,0,0,0.28); border: 1px solid rgba(212,175,55,0.28);
-    border-radius: 10px; padding: 8px 11px;
-    display: flex; align-items: center; justify-content: space-between;
-}
-.gld-combo .lbl { font-size: 0.66rem; color: #a89768; font-weight: 600; }
-.gld-combo .num { font-size: 1.15rem; font-weight: 700; letter-spacing: 0.1em; color: #f4e2a1; }
-.gld-caption { font-size: 0.64rem; color: #6b5f3f; line-height: 1.45; margin-top: 9px; position: relative; z-index: 1; }
 
 .gld-section-lbl {
     text-align: center; font-weight: 800; font-size: 0.82rem; color: #0d0a05;
