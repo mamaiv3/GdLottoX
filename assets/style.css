@@ -223,3 +223,99 @@ html, body, [class*="css"] {
     border-radius: 12px;
     border: 1px solid rgba(255,255,255,0.08);
 }
+
+/* ===================================================================== */
+/* ===== Gold/black "Base Draw" share card (tab Base) — scoped .gld- ===== */
+/* ===================================================================== */
+.gld-card {
+    background: linear-gradient(180deg, rgba(212,175,55,0.06), transparent 25%), #0a0803;
+    border: 1px solid rgba(212,175,55,0.35);
+    border-radius: 18px;
+    padding: 16px 15px 14px;
+    margin-bottom: 14px;
+    position: relative;
+    overflow: hidden;
+}
+.gld-card::before {
+    content: "";
+    position: absolute; top: -35%; left: 50%; transform: translateX(-50%);
+    width: 320px; height: 320px;
+    background: radial-gradient(circle, rgba(212,175,55,0.16) 0%, transparent 70%);
+    pointer-events: none;
+}
+.gld-ribbon {
+    display: inline-block;
+    background: linear-gradient(120deg, #d4af37, #f4e2a1, #d4af37);
+    color: #1a1408; font-weight: 800; font-size: 0.68rem;
+    letter-spacing: 0.08em; padding: 4px 10px; border-radius: 6px;
+    margin-bottom: 10px; position: relative; z-index: 1;
+}
+.gld-hero { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: relative; z-index: 1; }
+.gld-date {
+    font-family: 'Poppins', sans-serif;
+    font-size: 2.5rem; font-weight: 700; line-height: 1;
+    background: linear-gradient(160deg, #f4e2a1 0%, #d4af37 45%, #9a7b1f 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.gld-seal {
+    flex: none; width: 52px; height: 52px; border-radius: 50%;
+    border: 2px solid #d4af37;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 16px rgba(212,175,55,0.32), inset 0 0 8px rgba(212,175,55,0.15);
+}
+.gld-seal span { font-weight: 700; font-size: 0.82rem; color: #f4e2a1; }
+.gld-headline {
+    font-size: 0.88rem; font-weight: 800; letter-spacing: 0.03em; color: #f4e2a1;
+    margin: 8px 0 2px; position: relative; z-index: 1;
+}
+.gld-subline { font-size: 0.66rem; color: #a89768; margin-bottom: 12px; position: relative; z-index: 1; }
+
+.gld-table { width: 100%; border-collapse: collapse; position: relative; z-index: 1; margin-bottom: 2px; }
+.gld-table th {
+    font-size: 0.72rem; font-weight: 700; color: #1a1408;
+    background: linear-gradient(120deg, #d4af37, #f4e2a1);
+    padding: 7px 0; text-align: center;
+}
+.gld-table th:first-child { border-radius: 8px 0 0 0; }
+.gld-table th:last-child { border-radius: 0 8px 0 0; }
+.gld-table td {
+    text-align: center; padding: 8px 0;
+    font-family: 'Poppins', sans-serif; font-size: 0.95rem; font-weight: 700;
+    color: #e7dcb8;
+    border-bottom: 1px solid rgba(212,175,55,0.14);
+}
+.gld-table td:first-child { font-size: 0.66rem; font-weight: 600; color: #8a7c50; }
+.gld-table tr.gld-pick td { color: #0d0a05; background: linear-gradient(120deg, #f4e2a1, #d4af37); font-size: 1.05rem; }
+.gld-table tr.gld-pick td:first-child { color: #1a1408; font-weight: 700; }
+
+.gld-combo {
+    margin-top: 10px; position: relative; z-index: 1;
+    background: rgba(0,0,0,0.28); border: 1px solid rgba(212,175,55,0.28);
+    border-radius: 10px; padding: 8px 11px;
+    display: flex; align-items: center; justify-content: space-between;
+}
+.gld-combo .lbl { font-size: 0.66rem; color: #a89768; font-weight: 600; }
+.gld-combo .num { font-size: 1.15rem; font-weight: 700; letter-spacing: 0.1em; color: #f4e2a1; }
+.gld-caption { font-size: 0.64rem; color: #6b5f3f; line-height: 1.45; margin-top: 9px; position: relative; z-index: 1; }
+
+.gld-section-lbl {
+    text-align: center; font-weight: 800; font-size: 0.82rem; color: #0d0a05;
+    background: linear-gradient(120deg, #d4af37, #f4e2a1);
+    padding: 6px 0; border-radius: 8px; margin-bottom: 10px; position: relative; z-index: 1;
+}
+.gld-top-row { display: flex; align-items: center; gap: 9px; padding: 7px 4px; position: relative; z-index: 1; }
+.gld-top-row:not(:last-child) { border-bottom: 1px solid rgba(212,175,55,0.12); }
+.gld-top-row.gld-rank1 { background: rgba(212,175,55,0.08); border-radius: 8px; }
+.gld-rank-badge {
+    width: 24px; height: 24px; flex: none; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; font-weight: 700; color: #e7dcb8;
+    background: rgba(212,175,55,0.1); border: 1px solid rgba(212,175,55,0.3);
+}
+.gld-top-main { flex: 1; }
+.gld-top-num { font-size: 0.95rem; font-weight: 700; color: #f3ecd8; letter-spacing: 0.05em; }
+.gld-bar-track { height: 4px; border-radius: 3px; background: rgba(212,175,55,0.12); margin-top: 4px; overflow: hidden; }
+.gld-bar-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #9a7b1f, #f4e2a1); }
+.gld-top-score { text-align: right; flex: none; }
+.gld-top-score .v { font-size: 0.78rem; font-weight: 700; color: #2ee6a8; }
+.gld-top-score .l { font-size: 0.58rem; color: #6b5f3f; }
