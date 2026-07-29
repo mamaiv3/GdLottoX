@@ -139,6 +139,8 @@ def render_base_image(
     CREAM = (231, 220, 184)
     MUTED = (138, 124, 80)
     DARK_TXT = (18, 14, 6)
+    SILVER = (210, 212, 222)
+    BRONZE = (198, 149, 94)
 
     img = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(img)
@@ -204,20 +206,19 @@ def render_base_image(
         _center_text(draw, cx, y + header_h / 2 + 2, lbl, f_th, DARK_TXT)
 
     row_y = y + header_h
+    tiers = {0: GOLD_LT, 1: SILVER, 2: BRONZE}
     for row_i in range(n_rows):
         rank_no = rank_start + row_i
-        is_pick = row_i == 0
+        tier_bg = tiers.get(row_i)
         row_box = (table_x0, row_y, table_x1, row_y + row_h)
-        if is_pick:
-            draw.rectangle(row_box, fill=GOLD_LT)
-        elif row_i % 2 == 1:
-            draw.rectangle(row_box, fill=(255, 255, 255, 0))
-        rank_col = DARK_TXT if is_pick else MUTED
+        if tier_bg:
+            draw.rectangle(row_box, fill=tier_bg)
+        rank_col = DARK_TXT if tier_bg else MUTED
         _center_text(draw, table_x0 + lbl_w / 2, row_y + row_h / 2 + 2, f"R{rank_no}", f_rank, rank_col)
         for i, p in enumerate(base):
             digit = p[row_i] if row_i < len(p) else "\u2014"
             cx = table_x0 + lbl_w + col_w * i + col_w / 2
-            col = DARK_TXT if is_pick else CREAM
+            col = DARK_TXT if tier_bg else CREAM
             _center_text(draw, cx, row_y + row_h / 2 + 2, digit, f_cell, col)
         draw.line((table_x0, row_y + row_h, table_x1, row_y + row_h), fill=(212, 175, 55, 40), width=1)
         row_y += row_h
@@ -396,6 +397,7 @@ with tab_base:
                 f"Result : {result_handle}\n"
                 f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n\n"
                 f"🏆 Kombinasi Utama : {kombinasi_utama}\n\n"
+                f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n"
                 f"🎯 Top 10 Set\n"
                 f"{top10_line}\n"
                 f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"
