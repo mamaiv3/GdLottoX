@@ -123,7 +123,21 @@ def _rounded(draw: ImageDraw.ImageDraw, box, radius: int, **kwargs) -> None:
     draw.rounded_rectangle(box, radius=radius, **kwargs)
 
 
-def render_base_image(
+def _wrap_csv(draw: ImageDraw.ImageDraw, items: list[str], f, max_width: int, sep: str = ", ") -> list[str]:
+    lines, cur = [], ""
+    for it in items:
+        cand = (cur + sep + it) if cur else it
+        if draw.textlength(cand, font=f) <= max_width or not cur:
+            cur = cand
+        else:
+            lines.append(cur)
+            cur = it
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def render_base_gold(
     base: list[list[str]],
     rank_start: int,
     rank_end: int,
@@ -131,8 +145,9 @@ def render_base_image(
     date_label: str,
     result_handle: str = "@Breakcode4d",
     hot_digits: set[str] | None = None,
+    top10_numbers: list[str] | None = None,
 ) -> bytes:
-    """Lukis kad 'Base Draw' (gold/black) sebagai PNG sebenar — boleh muat turun atau screenshot terus."""
+    """Lukis kad 'Base Draw' (gold/black - design asal) sebagai PNG sebenar."""
     W, H = 1000, 1300
     GOLD = (212, 175, 55)
     GOLD_LT = (244, 226, 161)
@@ -253,6 +268,515 @@ def render_base_image(
     return buf.getvalue()
 
 
+# ---------------------------------------------------------------- NEON ----
+def render_base_neon(base, rank_start, rank_end, kombinasi, date_label, result_handle="@Breakcode4d", hot_digits=None, top10_numbers=None):
+    hot = hot_digits or set()
+    top10_numbers = top10_numbers or []
+    W, H = 1000, 1300
+    BG = (8, 6, 18)
+    CYAN = (70, 245, 255)
+    MAG = (255, 60, 200)
+    CREAM = (222, 232, 240)
+    MUTED = (110, 110, 150)
+
+    img = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(img)
+    for yy in range(0, H, 3):
+        d.line((0, yy, W, yy), fill=(14, 11, 28), width=1)
+
+    pad = 40
+    d.rectangle((pad, pad, W - pad, H - pad), outline=MAG, width=2)
+    d.rectangle((pad + 6, pad + 6, W - pad - 6, H - pad - 6), outline=CYAN, width=2)
+
+    f_tag = _font("GeistMono-Bold.ttf", 24)
+    f_date = _font("BigShoulders-Bold.ttf", 150)
+    f_head = _font("BigShoulders-Bold.ttf", 40)
+    f_sub = _font("GeistMono-Regular.ttf", 22)
+    f_th = _font("GeistMono-Bold.ttf", 30)
+    f_rank = _font("GeistMono-Regular.ttf", 22)
+    f_cell = _font("GeistMono-Bold.ttf", 42)
+    f_combo_lbl = _font("GeistMono-Bold.ttf", 26)
+    f_combo_num = _font("BigShoulders-Bold.ttf", 60)
+    f_cap = _font("GeistMono-Regular.ttf", 20)
+    f_res = _font("GeistMono-Bold.ttf", 26)
+
+    p = 76
+    y = 100
+    d.rectangle((p, y, p + 230, y + 44), outline=CYAN, width=2)
+    _center_text(d, p + 115, y + 23, "[ BASE DRAW ]", f_tag, CYAN)
+    y += 70
+    d.text((p - 3, y - 3), date_label, font=f_date, fill=MAG, anchor="lt")
+    d.text((p + 3, y + 3), date_label, font=f_date, fill=CYAN, anchor="lt")
+    y += 168
+    d.text((p, y), "BREAKCODE BASE DRAW", font=f_head, fill=CREAM, anchor="lt")
+    y += 46
+    d.text((p, y), f"Formula Break :: rank {rank_start}-{rank_end}", font=f_sub, fill=MUTED, anchor="lt")
+
+    y += 46
+    x0, x1 = p, W - p
+    lbl_w = 116
+    col_w = (x1 - x0 - lbl_w) / 4
+    header_h, row_h = 60, 76
+    d.rectangle((x0, y, x1, y + header_h), outline=CYAN, width=2)
+    for i, lbl in enumerate(["P1", "P2", "P3", "P4"]):
+        cx = x0 + lbl_w + col_w * i + col_w / 2
+        _center_text(d, cx, y + header_h / 2 + 2, lbl, f_th, CYAN)
+    ry = y + header_h
+    n_rows = max(len(c) for c in base)
+    for ri in range(n_rows):
+        for k in range(0, int(x1 - x0), 14):
+            d.line((x0 + k, ry + row_h, x0 + min(k + 7, x1 - x0), ry + row_h), fill=MAG, width=1)
+        _center_text(d, x0 + lbl_w / 2, ry + row_h / 2 + 2, f"R{rank_start + ri}", f_rank, MUTED)
+        for i, col in enumerate(base):
+            digit = col[ri] if ri < len(col) else "-"
+            cx = x0 + lbl_w + col_w * i + col_w / 2
+            if digit in hot:
+                bw, bh = 66, 56
+                d.rectangle((cx - bw / 2, ry + row_h / 2 - bh / 2, cx + bw / 2, ry + row_h / 2 + bh / 2), outline=MAG, width=3)
+                _center_text(d, cx, ry + row_h / 2 + 2, digit, f_cell, MAG)
+            else:
+                _center_text(d, cx, ry + row_h / 2 + 2, digit, f_cell, CREAM)
+        ry += row_h
+    d.rectangle((x0, y, x1, ry), outline=CYAN, width=2)
+
+    y = ry + 26
+    d.rectangle((x0, y, x1, y + 84), outline=MAG, width=2)
+    d.text((x0 + 22, y + 42), "KOMBINASI UTAMA", font=f_combo_lbl, fill=MUTED, anchor="lm")
+    d.text((x1 - 22, y + 42), f"[{kombinasi}]", font=f_combo_num, fill=CYAN, anchor="rm")
+
+    y += 84 + 22
+    d.text((x0, y), "// base ikut corak statistik draw lepas -- bukan jaminan.", font=f_cap, fill=MUTED, anchor="lt")
+    y += 44
+    d.rectangle((x0, y, x1, y + 58), outline=CYAN, width=2)
+    _center_text(d, (x0 + x1) / 2, y + 29 + 2, f"> Result : {result_handle}_", f_res, CYAN)
+
+    if top10_numbers:
+        y += 58 + 26
+        f_top_lbl = _font("GeistMono-Bold.ttf", 24)
+        f_top_num = _font("GeistMono-Regular.ttf", 22)
+        d.text((x0, y), "[ TOP 10 SET ]", font=f_top_lbl, fill=MAG, anchor="lt")
+        y += 34
+        for ln in _wrap_csv(d, top10_numbers, f_top_num, x1 - x0):
+            d.text((x0, y), ln, font=f_top_num, fill=CREAM, anchor="lt")
+            y += 30
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+# --------------------------------------------------------------- SWISS ----
+def render_base_swiss(base, rank_start, rank_end, kombinasi, date_label, result_handle="@Breakcode4d", hot_digits=None, top10_numbers=None):
+    hot = hot_digits or set()
+    top10_numbers = top10_numbers or []
+    W, H = 1000, 1260
+    BG = (244, 241, 234)
+    INK = (20, 20, 22)
+    RED = (196, 42, 34)
+    MUTED = (130, 126, 118)
+
+    img = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(img)
+
+    f_tag = _font("WorkSans-Bold.ttf", 22)
+    f_date = _font("Gloock-Regular.ttf", 150)
+    f_head = _font("WorkSans-Bold.ttf", 30)
+    f_sub = _font("WorkSans-Regular.ttf", 22)
+    f_th = _font("WorkSans-Bold.ttf", 26)
+    f_rank = _font("IBMPlexMono-Bold.ttf", 20)
+    f_cell = _font("IBMPlexMono-Bold.ttf", 42)
+    f_combo_lbl = _font("WorkSans-Bold.ttf", 22)
+    f_combo_num = _font("Gloock-Regular.ttf", 64)
+    f_cap = _font("WorkSans-Regular.ttf", 20)
+    f_res = _font("WorkSans-Bold.ttf", 24)
+    f_top_lbl = _font("WorkSans-Bold.ttf", 20)
+    f_top_num = _font("IBMPlexMono-Bold.ttf", 22)
+
+    p = 80
+    y = 90
+    d.rectangle((p, y, p + 6, y + 26), fill=RED)
+    d.text((p + 20, y), "B A S E   D R A W", font=f_tag, fill=INK, anchor="lt")
+    y += 50
+    d.text((p, y), date_label, font=f_date, fill=INK, anchor="lt")
+    y += 168
+    d.text((p, y), "Breakcode Base Draw", font=f_head, fill=INK, anchor="lt")
+    y += 40
+    d.text((p, y), f"Formula Break \u00b7 rank {rank_start}\u2013{rank_end}", font=f_sub, fill=MUTED, anchor="lt")
+    y += 40
+    d.line((p, y, W - p, y), fill=INK, width=2)
+
+    y += 30
+    x0, x1 = p, W - p
+    lbl_w = 100
+    col_w = (x1 - x0 - lbl_w) / 4
+    row_h = 74
+    for i, lbl in enumerate(["P1", "P2", "P3", "P4"]):
+        cx = x0 + lbl_w + col_w * i + col_w / 2
+        _center_text(d, cx, y + 14, lbl, f_th, MUTED)
+    y += 40
+    d.line((x0, y, x1, y), fill=INK, width=1)
+    n_rows = max(len(c) for c in base)
+    for ri in range(n_rows):
+        _center_text(d, x0 + lbl_w / 2, y + row_h / 2 + 2, f"R{rank_start + ri}", f_rank, MUTED)
+        for i, col in enumerate(base):
+            digit = col[ri] if ri < len(col) else "-"
+            cx = x0 + lbl_w + col_w * i + col_w / 2
+            cy = y + row_h / 2
+            if digit in hot:
+                _center_text(d, cx, cy + 2, digit, f_cell, RED)
+                d.ellipse((cx - 5, cy + 34, cx + 5, cy + 44), fill=RED)
+            else:
+                _center_text(d, cx, cy + 2, digit, f_cell, INK)
+        y += row_h
+        d.line((x0, y, x1, y), fill=(210, 205, 194), width=1)
+
+    y += 34
+    d.text((x0, y), "KOMBINASI UTAMA", font=f_combo_lbl, fill=MUTED, anchor="lt")
+    y += 30
+    d.text((x0, y), kombinasi, font=f_combo_num, fill=RED, anchor="lt")
+
+    y += 100
+    d.line((x0, y, x1, y), fill=INK, width=2)
+    y += 22
+    cap = "Base ikut corak statistik draw lepas sahaja \u2014 bukan jaminan keputusan."
+    d.text((x0, y), cap, font=f_cap, fill=MUTED, anchor="lt")
+    y += 40
+    d.ellipse((x0, y + 3, x0 + 10, y + 13), fill=RED)
+    d.text((x0 + 22, y), f"Result : {result_handle}", font=f_res, fill=INK, anchor="lt")
+
+    if top10_numbers:
+        y += 46
+        d.line((x0, y, x1, y), fill=(210, 205, 194), width=1)
+        y += 20
+        d.text((x0, y), "TOP 10 SET", font=f_top_lbl, fill=MUTED, anchor="lt")
+        y += 30
+        for ln in _wrap_csv(d, top10_numbers, f_top_num, x1 - x0):
+            d.text((x0, y), ln, font=f_top_num, fill=INK, anchor="lt")
+            y += 30
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+# -------------------------------------------------------------- CASINO ----
+def render_base_casino(base, rank_start, rank_end, kombinasi, date_label, result_handle="@Breakcode4d", hot_digits=None, top10_numbers=None):
+    hot = hot_digits or set()
+    top10_numbers = top10_numbers or []
+    W, H = 1000, 1320
+    BG = (7, 26, 20)
+    GOLD = (206, 172, 84)
+    GOLD_LT = (235, 214, 156)
+    CREAM = (222, 232, 220)
+    MUTED = (110, 140, 122)
+    DARK = (8, 20, 15)
+
+    img = Image.new("RGB", (W, H), BG)
+    glow = Image.new("L", (W, H), 0)
+    ImageDraw.Draw(glow).ellipse((W / 2 - 420, -350, W / 2 + 420, 350), fill=60)
+    glow = glow.filter(ImageFilter.GaussianBlur(100))
+    gl = Image.new("RGB", (W, H), (20, 60, 46))
+    img = Image.composite(gl, img, glow)
+    d = ImageDraw.Draw(img)
+
+    p = 76
+    _rounded(d, (p - 30, p - 30, W - p + 30, H - p + 30), 26, outline=GOLD, width=3)
+    _rounded(d, (p - 22, p - 22, W - p + 22, H - p + 22), 20, outline=GOLD, width=1)
+    for cx, cy in [(p - 30, p - 30), (W - p + 30, p - 30), (p - 30, H - p + 30), (W - p + 30, H - p + 30)]:
+        d.regular_polygon((cx, cy, 12), n_sides=4, rotation=45, fill=GOLD)
+
+    f_tag = _font("WorkSans-Bold.ttf", 24)
+    f_date = _font("CrimsonPro-Bold.ttf", 130)
+    f_head = _font("CrimsonPro-Bold.ttf", 40)
+    f_sub = _font("WorkSans-Regular.ttf", 22)
+    f_th = _font("WorkSans-Bold.ttf", 30)
+    f_rank = _font("WorkSans-Regular.ttf", 20)
+    f_cell = _font("RedHatMono-Bold.ttf", 42)
+    f_combo_lbl = _font("WorkSans-Bold.ttf", 26)
+    f_combo_num = _font("RedHatMono-Bold.ttf", 56)
+    f_cap = _font("WorkSans-Regular.ttf", 20)
+    f_res = _font("WorkSans-Bold.ttf", 26)
+    f_top_lbl = _font("WorkSans-Bold.ttf", 22)
+    f_top_num = _font("RedHatMono-Regular.ttf", 22)
+
+    y = 110
+    _rounded(d, (p, y, p + 260, y + 52), 26, fill=GOLD)
+    _center_text(d, p + 130, y + 27, "\u2666 BASE DRAW \u2666", f_tag, DARK)
+    y += 78
+    d.text((p, y), date_label, font=f_date, fill=GOLD_LT, anchor="lt")
+    y += 148
+    d.text((p, y), "Breakcode Base Draw", font=f_head, fill=GOLD_LT, anchor="lt")
+    y += 46
+    d.text((p, y), f"Formula Break \u00b7 rank {rank_start}\u2013{rank_end}", font=f_sub, fill=MUTED, anchor="lt")
+
+    y += 46
+    x0, x1 = p, W - p
+    lbl_w = 110
+    col_w = (x1 - x0 - lbl_w) / 4
+    header_h, row_h = 62, 76
+    _rounded(d, (x0, y, x1, y + header_h), 10, fill=GOLD)
+    for i, lbl in enumerate(["P1", "P2", "P3", "P4"]):
+        cx = x0 + lbl_w + col_w * i + col_w / 2
+        _center_text(d, cx, y + header_h / 2 + 2, lbl, f_th, DARK)
+    ry = y + header_h
+    n_rows = max(len(c) for c in base)
+    for ri in range(n_rows):
+        _center_text(d, x0 + lbl_w / 2, ry + row_h / 2 + 2, f"R{rank_start + ri}", f_rank, MUTED)
+        for i, col in enumerate(base):
+            digit = col[ri] if ri < len(col) else "-"
+            cx = x0 + lbl_w + col_w * i + col_w / 2
+            cy = ry + row_h / 2
+            if digit in hot:
+                r = 30
+                d.polygon([(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)], fill=GOLD)
+                _center_text(d, cx, cy + 2, digit, f_cell, DARK)
+            else:
+                _center_text(d, cx, cy + 2, digit, f_cell, CREAM)
+        d.line((x0, ry + row_h, x1, ry + row_h), fill=GOLD, width=1)
+        ry += row_h
+    _rounded(d, (x0, y, x1, ry), 10, outline=GOLD, width=2)
+
+    y = ry + 28
+    _rounded(d, (x0, y, x1, y + 88), 14, outline=GOLD, width=2)
+    d.text((x0 + 24, y + 44), "\u2660 Kombinasi Utama", font=f_combo_lbl, fill=MUTED, anchor="lm")
+    d.text((x1 - 24, y + 44), kombinasi, font=f_combo_num, fill=GOLD_LT, anchor="rm")
+
+    y += 88 + 24
+    d.text((x0, y), "Base ikut corak statistik draw lepas sahaja \u2014 bukan jaminan.", font=f_cap, fill=MUTED, anchor="lt")
+    y += 46
+    _rounded(d, (x0, y, x1, y + 60), 30, outline=GOLD, width=2)
+    _center_text(d, (x0 + x1) / 2, y + 30 + 2, f"\u2666 Result : {result_handle}", f_res, GOLD_LT)
+
+    if top10_numbers:
+        y += 60 + 26
+        _center_text(d, (x0 + x1) / 2, y, "\u2666 TOP 10 SET \u2666", f_top_lbl, GOLD, anchor="ma")
+        y += 32
+        for ln in _wrap_csv(d, top10_numbers, f_top_num, x1 - x0):
+            _center_text(d, (x0 + x1) / 2, y, ln, f_top_num, CREAM, anchor="ma")
+            y += 30
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+# -------------------------------------------------------------- TICKET ----
+def render_base_ticket(base, rank_start, rank_end, kombinasi, date_label, result_handle="@Breakcode4d", hot_digits=None, top10_numbers=None):
+    hot = hot_digits or set()
+    top10_numbers = top10_numbers or []
+    W, H = 1000, 1280
+    BG = (233, 220, 195)
+    INK = (46, 38, 30)
+    RED = (168, 46, 40)
+    NAVY = (34, 48, 70)
+    MUTED = (140, 124, 96)
+
+    img = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(img)
+
+    p = 46
+    stub_x = p + 150
+    d.rectangle((p, p, W - p, H - p), outline=INK, width=3)
+    for yy in range(p, H - p, 22):
+        d.ellipse((stub_x - 5, yy - 3, stub_x + 5, yy + 7), fill=BG, outline=INK, width=1)
+    notch_r = 26
+    d.ellipse((p - notch_r, H / 2 - notch_r, p + notch_r, H / 2 + notch_r), fill=BG, outline=INK, width=3)
+    d.ellipse((W - p - notch_r, H / 2 - notch_r, W - p + notch_r, H / 2 + notch_r), fill=BG, outline=INK, width=3)
+
+    f_tag = _font("ArsenalSC-Regular.ttf", 24)
+    f_date = _font("NationalPark-Bold.ttf", 130)
+    f_head = _font("NationalPark-Bold.ttf", 34)
+    f_sub = _font("WorkSans-Regular.ttf", 20)
+    f_th = _font("ArsenalSC-Regular.ttf", 26)
+    f_rank = _font("DMMono-Regular.ttf", 20)
+    f_cell = _font("DMMono-Regular.ttf", 44)
+    f_combo_lbl = _font("ArsenalSC-Regular.ttf", 22)
+    f_combo_num = _font("NationalPark-Bold.ttf", 54)
+    f_cap = _font("WorkSans-Regular.ttf", 19)
+    f_res = _font("ArsenalSC-Regular.ttf", 24)
+    f_top_lbl = _font("ArsenalSC-Regular.ttf", 22)
+    f_top_num = _font("DMMono-Regular.ttf", 26)
+
+    x0 = stub_x + 34
+    x1 = W - p - 34
+    y = 100
+    d.ellipse((x1 - 110, y, x1, y + 66), outline=RED, width=3)
+    _center_text(d, x1 - 55, y + 33 + 2, "BASE", f_tag, RED)
+    d.text((x0, y), date_label, font=f_date, fill=NAVY, anchor="lt")
+    y += 150
+    d.text((x0, y), "Breakcode Base Draw", font=f_head, fill=INK, anchor="lt")
+    y += 40
+    d.text((x0, y), f"Formula Break \u00b7 rank {rank_start}\u2013{rank_end}", font=f_sub, fill=MUTED, anchor="lt")
+    y += 30
+    for xx in range(int(x0), int(x1), 14):
+        d.line((xx, y, xx + 7, y), fill=INK, width=2)
+
+    y += 26
+    lbl_w = 96
+    col_w = (x1 - x0 - lbl_w) / 4
+    row_h = 74
+    for i, lbl in enumerate(["P1", "P2", "P3", "P4"]):
+        cx = x0 + lbl_w + col_w * i + col_w / 2
+        _center_text(d, cx, y + 14, lbl, f_th, NAVY)
+    y += 40
+    n_rows = max(len(c) for c in base)
+    for ri in range(n_rows):
+        _center_text(d, x0 + lbl_w / 2, y + row_h / 2 + 2, f"R{rank_start + ri}", f_rank, MUTED)
+        for i, col in enumerate(base):
+            digit = col[ri] if ri < len(col) else "-"
+            cx = x0 + lbl_w + col_w * i + col_w / 2
+            cy = y + row_h / 2
+            if digit in hot:
+                d.ellipse((cx - 30, cy - 26, cx + 30, cy + 26), outline=RED, width=4)
+            _center_text(d, cx, cy + 2, digit, f_cell, NAVY)
+        y += row_h
+        for xx in range(int(x0), int(x1), 14):
+            d.line((xx, y, xx + 7, y), fill=(190, 178, 156), width=1)
+
+    y += 24
+    d.text((x0, y), "WINNING BASE NO.", font=f_combo_lbl, fill=MUTED, anchor="lt")
+    y += 30
+    d.text((x0, y), kombinasi, font=f_combo_num, fill=RED, anchor="lt")
+
+    y += 90
+    for xx in range(int(x0), int(x1), 14):
+        d.line((xx, y, xx + 7, y), fill=INK, width=2)
+    y += 20
+    cap = "Base ikut corak statistik draw lepas sahaja \u2014 bukan jaminan keputusan."
+    d.text((x0, y), cap, font=f_cap, fill=MUTED, anchor="lt")
+    y += 36
+    _center_text(d, (x0 + x1) / 2, y + 14, f"Result : {result_handle}", f_res, RED)
+
+    if top10_numbers:
+        y += 50
+        for xx in range(int(x0), int(x1), 14):
+            d.line((xx, y, xx + 7, y), fill=INK, width=1)
+        y += 20
+        _center_text(d, (x0 + x1) / 2, y, "TOP 10 SET", f_top_lbl, MUTED, anchor="ma")
+        y += 36
+        for ln in _wrap_csv(d, top10_numbers, f_top_num, x1 - x0):
+            _center_text(d, (x0 + x1) / 2, y, ln, f_top_num, NAVY, anchor="ma")
+            y += 34
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------- SOFT ----
+def render_base_soft(base, rank_start, rank_end, kombinasi, date_label, result_handle="@Breakcode4d", hot_digits=None, top10_numbers=None):
+    hot = hot_digits or set()
+    top10_numbers = top10_numbers or []
+    W, H = 1000, 1320
+    BG = (35, 27, 51)
+    SHADOW_D = (24, 18, 38)
+    SHADOW_L = (48, 38, 68)
+    LAV = (200, 190, 230)
+    PEACH = (245, 190, 160)
+    MINT = (170, 220, 200)
+    MUTED = (150, 140, 175)
+
+    img = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(img)
+
+    p = 50
+    _rounded(d, (p + 6, p + 8, W - p + 6, H - p + 8), 46, fill=SHADOW_D)
+    _rounded(d, (p - 6, p - 6, W - p - 6, H - p - 6), 46, fill=SHADOW_L)
+    _rounded(d, (p, p, W - p, H - p), 44, fill=BG)
+
+    f_tag = _font("Outfit-Bold.ttf", 24)
+    f_date = _font("BricolageGrotesque-Bold.ttf", 128)
+    f_head = _font("BricolageGrotesque-Bold.ttf", 36)
+    f_sub = _font("Outfit-Regular.ttf", 22)
+    f_th = _font("Outfit-Bold.ttf", 28)
+    f_rank = _font("Outfit-Regular.ttf", 20)
+    f_cell = _font("RedHatMono-Bold.ttf", 40)
+    f_combo_lbl = _font("Outfit-Bold.ttf", 24)
+    f_combo_num = _font("RedHatMono-Bold.ttf", 52)
+    f_cap = _font("Outfit-Regular.ttf", 20)
+    f_res = _font("Outfit-Bold.ttf", 26)
+    f_top_lbl = _font("Outfit-Bold.ttf", 20)
+    f_top_num = _font("RedHatMono-Regular.ttf", 20)
+
+    pad = 96
+    y = 130
+    _rounded(d, (pad, y, pad + 230, y + 52), 26, fill=LAV)
+    _center_text(d, pad + 115, y + 27, "Base Draw", f_tag, (40, 32, 58))
+    y += 78
+    d.text((pad, y), date_label, font=f_date, fill=PEACH, anchor="lt")
+    y += 146
+    d.text((pad, y), "Breakcode Base Draw", font=f_head, fill=LAV, anchor="lt")
+    y += 42
+    d.text((pad, y), f"Formula Break \u00b7 rank {rank_start}\u2013{rank_end}", font=f_sub, fill=MUTED, anchor="lt")
+
+    y += 50
+    x0, x1 = pad, W - pad
+    lbl_w = 90
+    col_w = (x1 - x0 - lbl_w) / 4
+    row_h = 70
+    n_rows = max(len(c) for c in base)
+    for i, lbl in enumerate(["P1", "P2", "P3", "P4"]):
+        cx = x0 + lbl_w + col_w * i + col_w / 2
+        _center_text(d, cx, y - 6, lbl, f_th, MUTED)
+    y += 28
+    for ri in range(n_rows):
+        _center_text(d, x0 + lbl_w / 2, y + row_h / 2 + 2, f"R{rank_start + ri}", f_rank, MUTED)
+        for i, col in enumerate(base):
+            digit = col[ri] if ri < len(col) else "-"
+            cx = x0 + lbl_w + col_w * i + col_w / 2
+            cy = y + row_h / 2
+            chip_w, chip_h = col_w - 16, row_h - 14
+            box = (cx - chip_w / 2, cy - chip_h / 2, cx + chip_w / 2, cy + chip_h / 2)
+            if digit in hot:
+                _rounded(d, (box[0] + 3, box[1] + 4, box[2] + 3, box[3] + 4), 16, fill=SHADOW_D)
+                _rounded(d, box, 16, fill=PEACH)
+                _center_text(d, cx, cy + 2, digit, f_cell, (40, 24, 20))
+            else:
+                _rounded(d, box, 16, fill=SHADOW_L)
+                _center_text(d, cx, cy + 2, digit, f_cell, MINT)
+        y += row_h + 6
+
+    y += 10
+    _rounded(d, (x0 + 4, y + 4, x1 + 4, y + 90 + 4), 24, fill=SHADOW_D)
+    _rounded(d, (x0, y, x1, y + 90), 24, fill=SHADOW_L)
+    d.text((x0 + 26, y + 45), "Kombinasi Utama", font=f_combo_lbl, fill=MUTED, anchor="lm")
+    d.text((x1 - 26, y + 45), kombinasi, font=f_combo_num, fill=PEACH, anchor="rm")
+
+    y += 90 + 16
+    cap = "Base ikut corak statistik draw lepas sahaja \u2014 bukan jaminan keputusan."
+    d.text((x0, y), cap, font=f_cap, fill=MUTED, anchor="lt")
+    y += 36
+    _rounded(d, (x0, y, x1, y + 58), 29, fill=SHADOW_L)
+    _center_text(d, (x0 + x1) / 2, y + 29 + 2, f"Result : {result_handle}", f_res, LAV)
+
+    if top10_numbers:
+        y += 58 + 20
+        d.text((x0, y), "Top 10 Set", font=f_top_lbl, fill=MUTED, anchor="lt")
+        y += 26
+        for ln in _wrap_csv(d, top10_numbers, f_top_num, x1 - x0):
+            d.text((x0, y), ln, font=f_top_num, fill=MINT, anchor="lt")
+            y += 25
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+STYLE_RENDERERS = {
+    "gold": ("Gold (Asal)", render_base_gold),
+    "neon": ("Neon Arcade", render_base_neon),
+    "swiss": ("Swiss Editorial", render_base_swiss),
+    "casino": ("Emerald Casino", render_base_casino),
+    "ticket": ("Retro Ticket", render_base_ticket),
+    "soft": ("Soft Neumorphic", render_base_soft),
+}
+
+
+def render_base_image(style, base, rank_start, rank_end, kombinasi, date_label, result_handle="@Breakcode4d", hot_digits=None, top10_numbers=None):
+    _, fn = STYLE_RENDERERS.get(style, STYLE_RENDERERS["gold"])
+    return fn(base, rank_start, rank_end, kombinasi, date_label, result_handle, hot_digits, top10_numbers)
+
+
 # ================================================================== PAGE ===
 load_css()
 
@@ -352,6 +876,12 @@ with tab_base:
         )
     else:
         with st.expander("⚙️ Tetapan"):
+            style_options = list(STYLE_RENDERERS.keys())
+            base_style = st.selectbox(
+                "🎨 Design kad:", style_options,
+                format_func=lambda k: STYLE_RENDERERS[k][0],
+                key="base_style",
+            )
             bc1, bc2 = st.columns(2)
             base_recent_n = bc1.slider(
                 "Jumlah draw terkini:", 20, len(draws), min(DEFAULT_RECENT_N, len(draws)), 5, key="base_n"
@@ -366,10 +896,6 @@ with tab_base:
                 min(10, len(draws)), len(draws), min(DEFAULT_RECENT_N, len(draws)), 5, key="base_score_n",
             )
             result_handle = st.text_input("Channel/Result handle:", value="@Breakcode4d", key="base_result_handle")
-            hot_digits_input = st.text_input(
-                "Nombor top hari ini (pisah dengan koma):",
-                value="", placeholder="cth: 4,9,2", key="base_hot_digits",
-            )
 
         try:
             base = generate_break_base(draws, recent_n=base_recent_n, rank_range=base_rank_range)
@@ -382,23 +908,33 @@ with tab_base:
             date_label = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).strftime("%d/%m")
             rank_start, rank_end = base_rank_range
 
+            hot_digits_input = st.text_input(
+                "✨ Nombor top hari ini (pisah dengan koma):",
+                value="", placeholder="cth: 4,9,2", key="base_hot_digits",
+            )
             hot_digits = {d.strip() for d in hot_digits_input.split(",") if d.strip().isdigit() and len(d.strip()) == 1}
-            png_bytes = render_base_image(base, rank_start, rank_end, kombinasi_utama, date_label, result_handle, hot_digits)
+
+            combos = generate_wheel_combos(base, lot=base_lot)
+            top10 = rank_combos(combos, draws, recent_n=base_score_n, top_n=10)
+            top10_numbers = [r["Nombor"] for r in top10]
+
+            png_bytes = render_base_image(
+                base_style, base, rank_start, rank_end, kombinasi_utama, date_label,
+                result_handle, hot_digits, top10_numbers,
+            )
             st.image(png_bytes, use_container_width=True)
             st.download_button(
                 "🖼️ Muat Turun Gambar Base (PNG)",
                 data=png_bytes,
-                file_name=f"base_{date_label.replace('/', '-')}.png",
+                file_name=f"base_{base_style}_{date_label.replace('/', '-')}.png",
                 mime="image/png",
                 key="dl_base_png",
             )
             st.caption("Tekan lama / klik kanan gambar di atas untuk terus simpan atau screenshot.")
 
-            combos = generate_wheel_combos(base, lot=base_lot)
-            top10 = rank_combos(combos, draws, recent_n=base_score_n, top_n=10)
             st.markdown(gold_top10_card(top10), unsafe_allow_html=True)
 
-            top10_line = ", ".join(r["Nombor"] for r in top10)
+            top10_line = ", ".join(top10_numbers)
             share_text = (
                 f"🔮 {date_label} Breakcode Base Draw!!!!\n"
                 f"🕹 Belian bebas ikut anda ibox/tegak dimana\u00b2 rumah (Recommended GD Lotto)\n\n"
