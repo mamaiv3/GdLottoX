@@ -8,7 +8,7 @@ Fokus penuh pada:
 """
 
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -818,6 +818,18 @@ tab_dash, tab_base, tab_break, tab_wheel, tab_data = st.tabs(
 
 # ============================================================= DASHBOARD ===
 with tab_dash:
+    dash_c1, dash_c2 = st.columns([2.3, 1])
+    with dash_c1:
+        st.markdown("**📥 Kemas Kini Draw Terkini**")
+        st.caption("Tarik keputusan terbaru terus dari sini (perlu sambungan internet).")
+    with dash_c2:
+        if st.button("🔄 Kemas Kini Draw", key="dash_scrape_btn", use_container_width=True):
+            with st.spinner("Menarik keputusan terkini..."):
+                msg = scrape_latest()
+            st.info(msg)
+            st.rerun()
+
+    divider()
     section_title("📌", "Insight Draw Terakhir")
 
     need_single = DEFAULT_RECENT_N + 1
@@ -905,7 +917,15 @@ with tab_base:
 
         if base:
             kombinasi_utama = "".join(p[0] for p in base)
-            date_label = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).strftime("%d/%m")
+
+            # Base ini disediakan UNTUK draw seterusnya (belum keluar) — bukan draw
+            # terakhir yang sudah direkodkan. Jadi tarikh = (tarikh draw terakhir + 1
+            # hari), dikira dgn tarikh sistem hari ini supaya tak "terkebelakang" jika
+            # data draw belum dikemas kini utk hari semasa.
+            today_my = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).date()
+            last_draw_date = datetime.strptime(last_draw["date"], "%Y-%m-%d").date()
+            next_draw_date = max(last_draw_date + timedelta(days=1), today_my)
+            date_label = next_draw_date.strftime("%d/%m")
             rank_start, rank_end = base_rank_range
 
             hot_digits_input = st.text_input(
