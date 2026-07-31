@@ -1114,11 +1114,15 @@ with tab_wheel:
         if st.button("🎰 Jana Wheelpick", key="wp_run"):
             arah = "kiri" if arah_wp == "Kiri→Kanan" else "kanan"
             combos = generate_wheel_combos(base_wp, lot=lot, arah=arah)
-            st.info(f"Sebelum tapis: **{len(combos)}** kombinasi")
-
             filtered = filter_wheel_combos(
                 combos, draws, no_repeat, no_triple, no_pair, no_ascend, use_history, sim_limit, likes, dislikes
             )
+            st.session_state["wp_combos_n"] = len(combos)
+            st.session_state["wp_filtered"] = filtered
+
+        if "wp_filtered" in st.session_state:
+            filtered = st.session_state["wp_filtered"]
+            st.info(f"Sebelum tapis: **{st.session_state['wp_combos_n']}** kombinasi")
             st.success(f"✅ Selepas tapis: **{len(filtered)}** kombinasi")
 
             for i in range(0, len(filtered), 30):
@@ -1135,16 +1139,40 @@ with tab_wheel:
                 )
 
                 divider()
-                section_title("🏆", "Top 10 Pilihan", f"Disusun ikut kekerapan sebenar digit P1–P4 dalam {score_n} draw terkini.")
-                top10 = rank_combos(filtered, draws, recent_n=score_n, top_n=10)
-                st.dataframe(pd.DataFrame(top10), use_container_width=True, hide_index=True)
+                top_n_choice = st.selectbox(
+                    "Pilih jumlah TOP:", [10, 20, 30, 50, 100, 150, 200],
+                    index=0, key="wp_top_n",
+                )
+                section_title(
+                    "🏆", f"Top {top_n_choice} Pilihan",
+                    f"Disusun ikut kekerapan sebenar digit P1–P4 dalam {score_n} draw terkini.",
+                )
+                top_results = rank_combos(filtered, draws, recent_n=score_n, top_n=top_n_choice)
+                st.dataframe(pd.DataFrame(top_results), use_container_width=True, hide_index=True)
 
-                top10_text = "\n".join(f"{r['Nombor']}#####{r['Lot']}" for r in top10)
-                st.code(top10_text, language="text")
+                chunk_size = 10
+                sets = [top_results[i : i + chunk_size] for i in range(0, len(top_results), chunk_size)]
+                set_lines = []
+                for idx, s in enumerate(sets, start=1):
+                    set_lines.append(f"Set {idx}")
+                    set_lines.append(", ".join(r["Nombor"] for r in s))
+                sets_text = "\n".join(set_lines)
+
+                st.markdown(f"**📋 Ikut Set (10 nombor/set — {len(sets)} set):**")
+                st.code(sets_text, language="text")
                 st.download_button(
-                    "💾 Muat Turun Top 10",
-                    data=top10_text.encode(),
-                    file_name="wheelpick_top10.txt",
+                    "💾 Muat Turun Set",
+                    data=sets_text.encode(),
+                    file_name=f"wheelpick_top{top_n_choice}_sets.txt",
+                    mime="text/plain",
+                    key="dl_top_sets",
+                )
+
+                top_results_text = "\n".join(f"{r['Nombor']}#####{r['Lot']}" for r in top_results)
+                st.download_button(
+                    f"💾 Muat Turun Top {top_n_choice} (format lot)",
+                    data=top_results_text.encode(),
+                    file_name=f"wheelpick_top{top_n_choice}.txt",
                     mime="text/plain",
                     key="dl_top10",
                 )
