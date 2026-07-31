@@ -1125,10 +1125,11 @@ with tab_wheel:
             st.info(f"Sebelum tapis: **{st.session_state['wp_combos_n']}** kombinasi")
             st.success(f"✅ Selepas tapis: **{len(filtered)}** kombinasi")
 
-            for i in range(0, len(filtered), 30):
-                part = filtered[i : i + 30]
-                st.markdown(f"**Bahagian {i // 30 + 1}:**")
-                st.code("\n".join(part), language="text")
+            plain_filtered = [c.split("#####")[0] for c in filtered]
+            for i in range(0, len(plain_filtered), 10):
+                part = plain_filtered[i : i + 10]
+                st.markdown(f"**Set {i // 10 + 1}:**")
+                st.code(", ".join(part), language="text")
 
             if filtered:
                 st.download_button(
