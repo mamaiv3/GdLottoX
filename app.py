@@ -887,46 +887,87 @@ with tab_base:
             f"(ada {len(draws)}). Tambah draw di tab **📋 Data Draw**."
         )
     else:
-        with st.expander("⚙️ Tetapan"):
-            style_options = list(STYLE_RENDERERS.keys())
-            base_style = st.selectbox(
-                "🎨 Design kad:", style_options,
-                format_func=lambda k: STYLE_RENDERERS[k][0],
-                key="base_style",
-            )
-            bc1, bc2 = st.columns(2)
-            base_recent_n = bc1.slider(
-                "Jumlah draw terkini:", 20, len(draws), min(DEFAULT_RECENT_N, len(draws)), 5, key="base_n"
-            )
-            base_rank_range = bc2.select_slider(
-                "Julat rank digit:", options=list(range(1, 11)), value=DEFAULT_RANK_RANGE, key="base_rank"
-            )
-            bc3, bc4 = st.columns(2)
-            base_lot = bc3.text_input("Nilai Lot:", value="0.10", key="base_lot")
-            base_score_n = bc4.slider(
-                "Draw untuk kira skor Top 10:",
-                min(10, len(draws)), len(draws), min(DEFAULT_RECENT_N, len(draws)), 5, key="base_score_n",
-            )
-            result_handle = st.text_input("Channel/Result handle:", value="@Breakcode4d", key="base_result_handle")
+        # Base secara asal disediakan UNTUK draw seterusnya (belum keluar) — dikira
+        # drpd (tarikh draw terakhir + 1 hari) vs tarikh sistem hari ini, ambil yang
+        # lewat. Ini jadi "auto". Tapi bila draws.txt tak sempat dikemas kini (cth:
+        # Streamlit reset & data kena tarik semula), "auto" ni terus lompat ke esok
+        # walhal user baru nak semak base utk hari ini. Jadi bagi pilihan tarikh
+        # supaya boleh lihat/jana semula base bagi mana-mana hari — lepas atau depan.
+        today_my = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).date()
+        last_draw_date = datetime.strptime(last_draw["date"], "%Y-%m-%d").date()
+        auto_target_date = max(last_draw_date + timedelta(days=1), today_my)
+        first_draw_date = datetime.strptime(draws[0]["date"], "%Y-%m-%d").date()
 
-        try:
-            base = generate_break_base(draws, recent_n=base_recent_n, rank_range=base_rank_range)
-        except ValueError as e:
-            st.error(str(e))
+        dcol1, dcol2 = st.columns([2, 3])
+        with dcol1:
+            target_date = st.date_input(
+                "🗓️ Tarikh Draw",
+                value=auto_target_date,
+                min_value=first_draw_date,
+                max_value=today_my + timedelta(days=7),
+                key="base_target_date",
+                help="Base akan dijana guna draw SEBELUM tarikh ini sahaja — pilih hari "
+                     "lain (lepas/depan) utk semak base hari tersebut.",
+            )
+        with dcol2:
+            st.markdown(
+                f'<div class="bc4d-note" style="margin-top:28px">📌 Auto (draw seterusnya): '
+                f'<strong>{auto_target_date.strftime("%d/%m/%Y")}</strong> &middot; Hari ini: '
+                f'<strong>{today_my.strftime("%d/%m/%Y")}</strong></div>',
+                unsafe_allow_html=True,
+            )
+
+        target_date_str = target_date.strftime("%Y-%m-%d")
+        draws_asof = [d for d in draws if d["date"] < target_date_str]
+
+        insufficient_data = len(draws_asof) < DEFAULT_RECENT_N
+        if insufficient_data:
+            st.warning(
+                f"⚠️ Hanya {len(draws_asof)} draw sebelum {target_date_str} — perlu "
+                f"sekurang-kurangnya {DEFAULT_RECENT_N} draw untuk jana base bagi tarikh "
+                f"ini. Cuba pilih tarikh lain."
+            )
             base = None
+        else:
+            with st.expander("⚙️ Tetapan"):
+                style_options = list(STYLE_RENDERERS.keys())
+                base_style = st.selectbox(
+                    "🎨 Design kad:", style_options,
+                    format_func=lambda k: STYLE_RENDERERS[k][0],
+                    key="base_style",
+                )
+                bc1, bc2 = st.columns(2)
+                base_recent_n = bc1.slider(
+                    "Jumlah draw terkini:", 20, len(draws_asof), min(DEFAULT_RECENT_N, len(draws_asof)), 5, key="base_n"
+                )
+                base_rank_range = bc2.select_slider(
+                    "Julat rank digit:", options=list(range(1, 11)), value=DEFAULT_RANK_RANGE, key="base_rank"
+                )
+                bc3, bc4 = st.columns(2)
+                base_lot = bc3.text_input("Nilai Lot:", value="0.10", key="base_lot")
+                base_score_n = bc4.slider(
+                    "Draw untuk kira skor Top 10:",
+                    min(10, len(draws_asof)), len(draws_asof), min(DEFAULT_RECENT_N, len(draws_asof)), 5, key="base_score_n",
+                )
+                result_handle = st.text_input("Channel/Result handle:", value="@Breakcode4d", key="base_result_handle")
+
+            try:
+                base = generate_break_base(draws_asof, recent_n=base_recent_n, rank_range=base_rank_range)
+            except ValueError as e:
+                st.error(str(e))
+                base = None
 
         if base:
-            kombinasi_utama = "".join(p[0] for p in base)
-
-            # Base ini disediakan UNTUK draw seterusnya (belum keluar) — bukan draw
-            # terakhir yang sudah direkodkan. Jadi tarikh = (tarikh draw terakhir + 1
-            # hari), dikira dgn tarikh sistem hari ini supaya tak "terkebelakang" jika
-            # data draw belum dikemas kini utk hari semasa.
-            today_my = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).date()
-            last_draw_date = datetime.strptime(last_draw["date"], "%Y-%m-%d").date()
-            next_draw_date = max(last_draw_date + timedelta(days=1), today_my)
-            date_label = next_draw_date.strftime("%d/%m")
+            date_label = target_date.strftime("%d/%m")
             rank_start, rank_end = base_rank_range
+
+            actual_draw = next((d for d in draws if d["date"] == target_date_str), None)
+            if actual_draw:
+                flags = check_against_base(actual_draw["number"], base)
+                st.success(f"✅ Keputusan sebenar {target_date_str} : **{actual_draw['number']}**")
+                digit_chips(actual_draw["number"], flags)
+            else:
+                st.caption(f"ℹ️ Belum ada keputusan direkod untuk {target_date_str} — base ini jana sebagai unjuran.")
 
             hot_digits_input = st.text_input(
                 "✨ Nombor top hari ini (pisah dengan koma):",
@@ -935,8 +976,13 @@ with tab_base:
             hot_digits = {d.strip() for d in hot_digits_input.split(",") if d.strip().isdigit() and len(d.strip()) == 1}
 
             combos = generate_wheel_combos(base, lot=base_lot)
-            top10 = rank_combos(combos, draws, recent_n=base_score_n, top_n=10)
+            top10 = rank_combos(combos, draws_asof, recent_n=base_score_n, top_n=10)
             top10_numbers = [r["Nombor"] for r in top10]
+
+            # Kombinasi Utama = pilihan TOP 1 drpd Top 10 (skor kekerapan sebenar
+            # gabungan P1–P4), bukan sekadar cantum digit rank-teratas tiap posisi
+            # secara berasingan — lebih tepat sbb dah kira skor kombinasi sebenar.
+            kombinasi_utama = top10[0]["Nombor"] if top10 else "".join(p[0] for p in base)
 
             png_bytes = render_base_image(
                 base_style, base, rank_start, rank_end, kombinasi_utama, date_label,
@@ -978,7 +1024,7 @@ with tab_base:
                 mime="text/plain",
                 key="dl_base_card",
             )
-        else:
+        elif not insufficient_data:
             st.info("ℹ️ Tidak dapat jana base dengan tetapan semasa.")
 
 # ========================================================== FORMULA BREAK ===
