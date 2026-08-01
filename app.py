@@ -1056,45 +1056,88 @@ with tab_break:
     if len(draws) < 20:
         st.warning("⚠️ Data draw terlalu sedikit (<20). Tambah draw di tab **📋 Data Draw** dahulu.")
     else:
-        colA, colB = st.columns(2)
-        recent_n = colA.slider(
-            "Jumlah draw terkini:", 20, len(draws), min(DEFAULT_RECENT_N, len(draws)), 5, key="break_n"
-        )
-        rank_range = colB.select_slider(
-            "Julat rank digit (1 = paling panas):",
-            options=list(range(1, 11)),
-            value=DEFAULT_RANK_RANGE,
-            key="break_rank",
-        )
+        # Sama macam tab Base — bagi pilihan tarikh supaya boleh jana/lihat base bagi
+        # mana-mana hari (lepas utk semak balik, atau depan utk unjuran).
+        today_my = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).date()
+        last_draw_date = datetime.strptime(last_draw["date"], "%Y-%m-%d").date()
+        auto_target_date = max(last_draw_date + timedelta(days=1), today_my)
+        first_draw_date = datetime.strptime(draws[0]["date"], "%Y-%m-%d").date()
 
-        try:
-            base = generate_break_base(draws, recent_n=recent_n, rank_range=rank_range)
-            st.markdown("**🔢 Base Formula Break (boleh salin):**")
-            st.code("\n".join(" ".join(p) for p in base), language="text")
+        bdcol1, bdcol2 = st.columns([2, 3])
+        with bdcol1:
+            break_target_date = st.date_input(
+                "🗓️ Tarikh Draw",
+                value=auto_target_date,
+                min_value=first_draw_date,
+                max_value=today_my + timedelta(days=7),
+                key="break_target_date",
+                help="Base akan dijana guna draw SEBELUM tarikh ini sahaja — pilih hari "
+                     "lain (lepas/depan) utk lihat base bagi hari tersebut.",
+            )
+        with bdcol2:
+            st.markdown(
+                f'<div class="bc4d-note" style="margin-top:28px">📌 Auto (draw seterusnya): '
+                f'<strong>{auto_target_date.strftime("%d/%m/%Y")}</strong> &middot; Hari ini: '
+                f'<strong>{today_my.strftime("%d/%m/%Y")}</strong></div>',
+                unsafe_allow_html=True,
+            )
 
-            with st.expander("🔁 Backtest — uji prestasi sebenar"):
-                bt_mode = st.radio(
-                    "Kaedah:", ["Base Tunggal", "Base Gabungan (2 Base)"], horizontal=True, key="bt_mode"
-                )
-                rounds = st.slider("Bilangan draw lepas untuk diuji:", 5, 50, 10, 5, key="bt_rounds")
-                if st.button("🚀 Jalankan Backtest", key="bt_run"):
-                    if bt_mode == "Base Tunggal":
-                        records, full_match, hit_rate = backtest_break(
-                            draws, recent_n=recent_n, rounds=rounds, rank_range=rank_range
-                        )
-                    else:
-                        records, full_match, hit_rate = backtest_combined(
-                            draws, recent_n=recent_n, rounds=rounds, rank_range=rank_range
-                        )
-                    if records:
-                        st.success(
-                            f"🎯 Match penuh (4/4 posisi): {full_match} / {len(records)} draw  →  **{hit_rate}%**"
-                        )
-                        st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
-                    else:
-                        st.warning("Data tidak mencukupi untuk backtest dengan tetapan ini.")
-        except ValueError as e:
-            st.error(str(e))
+        break_target_date_str = break_target_date.strftime("%Y-%m-%d")
+        draws_asof_break = [d for d in draws if d["date"] < break_target_date_str]
+
+        if len(draws_asof_break) < 20:
+            st.warning(
+                f"⚠️ Hanya {len(draws_asof_break)} draw sebelum {break_target_date_str} — perlu "
+                f"sekurang-kurangnya 20 draw untuk jana base bagi tarikh ini. Cuba pilih tarikh lain."
+            )
+        else:
+            colA, colB = st.columns(2)
+            recent_n = colA.slider(
+                "Jumlah draw terkini:", 20, len(draws_asof_break), min(DEFAULT_RECENT_N, len(draws_asof_break)), 5, key="break_n"
+            )
+            rank_range = colB.select_slider(
+                "Julat rank digit (1 = paling panas):",
+                options=list(range(1, 11)),
+                value=DEFAULT_RANK_RANGE,
+                key="break_rank",
+            )
+
+            try:
+                base = generate_break_base(draws_asof_break, recent_n=recent_n, rank_range=rank_range)
+                st.markdown("**🔢 Base Formula Break (boleh salin):**")
+                st.code("\n".join(" ".join(p) for p in base), language="text")
+
+                actual_draw_break = next((d for d in draws if d["date"] == break_target_date_str), None)
+                if actual_draw_break:
+                    flags = check_against_base(actual_draw_break["number"], base)
+                    st.success(f"✅ Keputusan sebenar {break_target_date_str} : **{actual_draw_break['number']}**")
+                    digit_chips(actual_draw_break["number"], flags)
+                else:
+                    st.caption(f"ℹ️ Belum ada keputusan direkod untuk {break_target_date_str} — base ini jana sebagai unjuran.")
+
+                with st.expander("🔁 Backtest — uji prestasi sebenar"):
+                    bt_mode = st.radio(
+                        "Kaedah:", ["Base Tunggal", "Base Gabungan (2 Base)"], horizontal=True, key="bt_mode"
+                    )
+                    rounds = st.slider("Bilangan draw lepas untuk diuji:", 5, 50, 10, 5, key="bt_rounds")
+                    if st.button("🚀 Jalankan Backtest", key="bt_run"):
+                        if bt_mode == "Base Tunggal":
+                            records, full_match, hit_rate = backtest_break(
+                                draws, recent_n=recent_n, rounds=rounds, rank_range=rank_range
+                            )
+                        else:
+                            records, full_match, hit_rate = backtest_combined(
+                                draws, recent_n=recent_n, rounds=rounds, rank_range=rank_range
+                            )
+                        if records:
+                            st.success(
+                                f"🎯 Match penuh (4/4 posisi): {full_match} / {len(records)} draw  →  **{hit_rate}%**"
+                            )
+                            st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
+                        else:
+                            st.warning("Data tidak mencukupi untuk backtest dengan tetapan ini.")
+            except ValueError as e:
+                st.error(str(e))
 
 # ================================================================ WHEELPICK ===
 with tab_wheel:
