@@ -1109,7 +1109,7 @@ with tab_wheel:
 
     input_mode = st.radio(
         "Sumber Base:",
-        ["Auto — Formula Break", "Gabung 2 Base (Hari ini + Semalam)", "Manual"],
+        ["Auto — Formula Break", "Gabung 2 Base (Hari ini + Semalam)", "Manual", "Gabung 2 Base (Manual)"],
         key="wp_mode",
     )
 
@@ -1147,7 +1147,7 @@ with tab_wheel:
                 st.code("\n".join(" ".join(p) for p in base_wp), language="text")
             except ValueError as e:
                 st.error(str(e))
-    else:
+    elif input_mode == "Manual":
         manual_base = st.text_area(
             "Masukkan Base Manual (4 baris, digit dipisah space):", height=120, key="wp_manual"
         )
@@ -1156,6 +1156,41 @@ with tab_wheel:
             base_wp = lines
         elif manual_base.strip():
             st.error("❌ Format base tidak sah — perlu tepat 4 baris, setiap baris ada sekurang-kurangnya satu digit.")
+    else:
+        st.caption("Taip/tampal 2 base (cth: satu drpd channel lain, satu lagi base sendiri) — akan digabungkan sama macam mod \"Gabung 2 Base (Hari ini + Semalam)\", tapi kedua-dua base ditaip sendiri.")
+        mc1, mc2 = st.columns(2)
+        with mc1:
+            st.markdown("**📋 Base Manual 1:**")
+            manual_base_1 = st.text_area(
+                "4 baris, digit dipisah space:", height=120, key="wp_manual_1"
+            )
+        with mc2:
+            st.markdown("**📋 Base Manual 2:**")
+            manual_base_2 = st.text_area(
+                "4 baris, digit dipisah space:", height=120, key="wp_manual_2"
+            )
+
+        def _parse_manual_base(raw: str):
+            ln = [x.strip().split() for x in raw.strip().split("\n") if x.strip()]
+            if raw.strip() and len(ln) == 4 and all(ln):
+                return ln
+            return None
+
+        parsed_1 = _parse_manual_base(manual_base_1)
+        parsed_2 = _parse_manual_base(manual_base_2)
+
+        if manual_base_1.strip() and not parsed_1:
+            st.error("❌ Format Base 1 tidak sah — perlu tepat 4 baris, setiap baris ada sekurang-kurangnya satu digit.")
+        if manual_base_2.strip() and not parsed_2:
+            st.error("❌ Format Base 2 tidak sah — perlu tepat 4 baris, setiap baris ada sekurang-kurangnya satu digit.")
+
+        if parsed_1 and parsed_2:
+            try:
+                base_wp = combine_bases(parsed_1, parsed_2)
+                st.markdown("**🔗 Base Gabungan (dipakai untuk Wheelpick):**")
+                st.code("\n".join(" ".join(p) for p in base_wp), language="text")
+            except ValueError as e:
+                st.error(str(e))
 
     if base_wp:
         lot = st.text_input("Nilai Lot:", value="0.10", key="wp_lot")
