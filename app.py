@@ -583,6 +583,22 @@ def render_base_ticket(base, rank_start, rank_end, kombinasi, date_label, result
     d.ellipse((p - notch_r, H / 2 - notch_r, p + notch_r, H / 2 + notch_r), fill=BG, outline=INK, width=3)
     d.ellipse((W - p - notch_r, H / 2 - notch_r, W - p + notch_r, H / 2 + notch_r), fill=BG, outline=INK, width=3)
 
+    # Jalur "barcode titik" menegak di ruang kosong tepi kiri (antara sempadan &
+    # lubang gegelung) — meniru tanda di tepi tiket 4D sebenar. Lebar setiap bar
+    # dikira drpd digit kombinasi + tarikh, jadi coraknya "terikat" dgn draw tsb.
+    code_digits = "".join(ch for ch in f"{kombinasi}{date_label}{''.join(top10_numbers)}" if ch.isdigit()) or "0123456789"
+    bar_x = p + 46
+    bar_max_w = (stub_x - 5) - bar_x - 24
+    bar_y = p + 18
+    i = 0
+    while bar_y < H - p - 18:
+        dgt = int(code_digits[i % len(code_digits)])
+        bw = 10 + dgt * (bar_max_w - 10) / 9
+        bh = 5 if dgt % 2 == 0 else 3
+        d.rectangle((bar_x, bar_y, bar_x + bw, bar_y + bh), fill=INK)
+        bar_y += 11
+        i += 1
+
     f_tag = _font("ArsenalSC-Regular.ttf", 24)
     f_date = _font("NationalPark-Bold.ttf", 130)
     f_head = _font("NationalPark-Bold.ttf", 34)
