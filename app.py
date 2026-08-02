@@ -31,6 +31,8 @@ from core.formula_break import (
     check_against_base,
     combine_bases,
     generate_break_base,
+    recommend_rank_range,
+    scan_digit_history,
 )
 from core.wheelpick import filter_wheel_combos, generate_wheel_combos, get_like_dislike_digits, rank_combos
 
@@ -828,8 +830,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_dash, tab_base, tab_break, tab_wheel, tab_data = st.tabs(
-    ["📊 Dashboard", "🔮 Base", "🧮 Formula Break", "🎡 Wheelpick", "📋 Data Draw"]
+tab_dash, tab_base, tab_break, tab_history, tab_wheel, tab_data = st.tabs(
+    ["📊 Dashboard", "🔮 Base", "🧮 Formula Break", "🕘 History", "🎡 Wheelpick", "📋 Data Draw"]
 )
 
 # ============================================================= DASHBOARD ===
@@ -1138,6 +1140,74 @@ with tab_break:
                             st.warning("Data tidak mencukupi untuk backtest dengan tetapan ini.")
             except ValueError as e:
                 st.error(str(e))
+
+# =================================================================== HISTORY ===
+with tab_history:
+    section_title(
+        "🕘", "History — Semak Corak Digit",
+        "Semak sepanjang sejarah draw: pada tarikh mana base (P1–P4) pernah ada digit sasaran anda.",
+    )
+
+    if len(draws) < 20:
+        st.warning("⚠️ Data draw terlalu sedikit (<20). Tambah draw di tab **📋 Data Draw** dahulu.")
+    else:
+        target_input = st.text_input(
+            "🔢 Nombor Sasaran (P1 P2 P3 P4):", value="", placeholder="cth: 1 2 3 4", key="hist_target"
+        )
+        target_digits = target_input.strip().split()
+
+        hc1, hc2 = st.columns(2)
+        hist_recent_n = hc1.slider(
+            "Jumlah draw terkini (per tarikh):", 20, len(draws), min(DEFAULT_RECENT_N, len(draws)), 5, key="hist_n"
+        )
+        hist_rank_range = hc2.select_slider(
+            "Julat rank digit:", options=list(range(1, 11)), value=DEFAULT_RANK_RANGE, key="hist_rank"
+        )
+        min_match = st.select_slider(
+            "Papar tarikh dengan sekurang-kurangnya:",
+            options=[1, 2, 3, 4], value=1,
+            format_func=lambda v: f"{v} padanan", key="hist_min_match",
+        )
+
+        if not target_input.strip():
+            st.caption("ℹ️ Masukkan 4 digit sasaran (satu bagi setiap P1–P4) untuk mula semak — cth: 1 2 3 4")
+        elif len(target_digits) != 4 or not all(len(t) == 1 and t.isdigit() for t in target_digits):
+            st.error("❌ Format tidak sah — masukkan tepat 4 digit tunggal, dipisah space (cth: 1 2 3 4).")
+        else:
+            try:
+                records = scan_digit_history(
+                    draws, target_digits, recent_n=hist_recent_n, rank_range=hist_rank_range, min_match=min_match
+                )
+            except ValueError as e:
+                st.error(str(e))
+                records = []
+
+            st.markdown(f"**📜 Senarai Tarikh Sepadan** ({len(records)} tarikh ditemui):")
+            if records:
+                st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
+            else:
+                st.info("Tiada tarikh sepadan dengan tetapan semasa. Cuba turunkan minimum padanan atau ubah julat rank.")
+
+            rank_start, rank_end = hist_rank_range
+            width = rank_end - rank_start + 1
+            try:
+                recs = recommend_rank_range(draws, target_digits, recent_n=hist_recent_n, width=width)
+            except ValueError as e:
+                recs = []
+                st.error(str(e))
+
+            if recs:
+                best = recs[0]
+                st.markdown("**💡 Cadangan Julat Base**")
+                st.success(
+                    f"**{best['Julat']}** — julat ini paling banyak **match penuh (4/4)** dengan nombor "
+                    f"sasaran sepanjang sejarah ({best['Match Penuh (4/4)']} match penuh, "
+                    f"{best['Jumlah Padanan Digit']} jumlah padanan digit, drpd {best['Draw Diuji']} draw diuji). "
+                    f"Lebar julat dikekalkan sama (lebar {width}) supaya adil berbanding tetapan semasa."
+                )
+                with st.expander("Lihat perbandingan semua julat (lebar sama)"):
+                    cmp_df = pd.DataFrame(recs)[["Julat", "Jumlah Padanan Digit", "Match Penuh (4/4)", "Draw Diuji"]]
+                    st.dataframe(cmp_df, use_container_width=True, hide_index=True)
 
 # ================================================================ WHEELPICK ===
 with tab_wheel:
