@@ -28,12 +28,16 @@ from core.formula_break import (
     DEFAULT_RECENT_N,
     backtest_break,
     backtest_combined,
+    backtest_random_baseline,
     check_against_base,
+    chi_square_uniformity,
     combine_bases,
+    ensemble_stable_digits,
     generate_break_base,
     recommend_rank_range,
     scan_digit_history,
 )
+from core.predictions_log import log_prediction, prediction_summary, reconcile_predictions
 from core.wheelpick import filter_wheel_combos, generate_wheel_combos, get_like_dislike_digits, rank_combos
 
 st.set_page_config(page_title="Breakcode4D — Formula Break", page_icon="🔮", layout="wide")
@@ -780,6 +784,21 @@ def render_base_soft(base, rank_start, rank_end, kombinasi, date_label, result_h
     return buf.getvalue()
 
 
+def _draws_cache_key(draws: list[dict]) -> tuple:
+    """Kunci cache mudah drpd senarai draws — cukup sbb draws hanya berubah bila fail draws.txt berubah."""
+    return (len(draws), draws[-1]["date"] if draws else None, draws[-1]["number"] if draws else None)
+
+
+@st.cache_data(show_spinner=False)
+def _cached_scan_digit_history(_draws, cache_key, target, recent_n, rank_range, min_match):
+    return scan_digit_history(_draws, target, recent_n=recent_n, rank_range=rank_range, min_match=min_match)
+
+
+@st.cache_data(show_spinner="Mengira cadangan julat base...")
+def _cached_recommend_rank_range(_draws, cache_key, target, recent_n, width):
+    return recommend_rank_range(_draws, target, recent_n=recent_n, width=width)
+
+
 STYLE_RENDERERS = {
     "gold": ("Gold (Asal)", render_base_gold),
     "neon": ("Neon Arcade", render_base_neon),
@@ -819,6 +838,18 @@ if not draws:
 
 last_draw = draws[-1]
 countdown = str(get_draw_countdown_from_last_8pm()).split(".")[0]
+
+# Amaran jurang tarikh — kesan bila draws.txt nampak belum dikemas kini (andaian
+# draw berlaku setiap hari, ikut corak data sedia ada; laraskan kalau tidak).
+_today_my = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).date()
+_last_draw_date = datetime.strptime(last_draw["date"], "%Y-%m-%d").date()
+_gap_days = (_today_my - _last_draw_date).days
+if _gap_days > 1:
+    st.warning(
+        f"⚠️ Data draw terakhir direkodkan **{_gap_days} hari lalu** ({last_draw['date']}) — "
+        "kemungkinan `draws.txt` belum dikemas kini. Tekan **🔄 Kemas Kini Draw** di tab "
+        "Dashboard, atau tambah draw manual di tab **📋 Data Draw**."
+    )
 
 st.markdown(
     card_grid([
@@ -894,6 +925,36 @@ with tab_dash:
         ),
         unsafe_allow_html=True,
     )
+
+    divider()
+    section_title(
+        "📊", "Rekod Ramalan Sebenar",
+        "Trek rekod forward-looking sebenar — base yang <strong>betul-betul disimpan sebelum keputusan keluar</strong>, "
+        "bukan backtest yang jana semula ke belakang.",
+    )
+    reconciled = reconcile_predictions(draws)
+    if not reconciled:
+        st.caption(
+            "Belum ada ramalan disimpan lagi. Pergi ke tab **🔮 Base**, jana base untuk tarikh akan datang, "
+            "lalu tekan **📌 Log Ramalan Ini** — nanti balik sini untuk semak keputusan sebenar."
+        )
+    else:
+        summary = prediction_summary(reconciled)
+        st.markdown(
+            card_grid([
+                card("✅ Selesai", f"{summary['decided']} / {summary['total']}"),
+                card("🎯 Match Penuh", str(summary["full_match"])),
+                card("📈 Kadar Match Penuh", f"{summary['rate']}%"),
+                card("⏳ Menunggu", str(summary["pending"])),
+            ]),
+            unsafe_allow_html=True,
+        )
+        st.dataframe(pd.DataFrame(reconciled), use_container_width=True, hide_index=True)
+        st.caption(
+            "Nota: fail log ramalan ni (`data/predictions_log.json`) ada batasan simpanan yang sama "
+            "macam `data/draws.txt` — boleh hilang kalau environment Streamlit reset (redeploy), "
+            "melainkan awak commit/simpan fail tu semula secara manual."
+        )
 
 # ===================================================================== BASE ===
 with tab_base:
@@ -986,6 +1047,16 @@ with tab_base:
                 digit_chips(actual_draw["number"], flags)
             else:
                 st.caption(f"ℹ️ Belum ada keputusan direkod untuk {target_date_str} — base ini jana sebagai unjuran.")
+                known_dates = {d["date"] for d in draws}
+                if st.button("📌 Log Ramalan Ini (Forward-Looking)", key="log_pred_btn"):
+                    ok, msg = log_prediction(
+                        target_date_str, base, base_recent_n, base_rank_range, "Base Tab", known_dates
+                    )
+                    (st.success if ok else st.error)(msg)
+                st.caption(
+                    "Simpan base ni SEKARANG (sblm keputusan keluar) — nanti boleh semak trek rekod sebenar "
+                    "di tab **📊 Dashboard**, bahagian \"Rekod Ramalan Sebenar\"."
+                )
 
             hot_digits_input = st.text_input(
                 "✨ Nombor top hari ini (pisah dengan koma):",
@@ -1123,7 +1194,8 @@ with tab_break:
                     )
                     rounds = st.slider("Bilangan draw lepas untuk diuji:", 5, 50, 10, 5, key="bt_rounds")
                     if st.button("🚀 Jalankan Backtest", key="bt_run"):
-                        if bt_mode == "Base Tunggal":
+                        is_combined = bt_mode != "Base Tunggal"
+                        if not is_combined:
                             records, full_match, hit_rate = backtest_break(
                                 draws, recent_n=recent_n, rounds=rounds, rank_range=rank_range
                             )
@@ -1132,12 +1204,70 @@ with tab_break:
                                 draws, recent_n=recent_n, rounds=rounds, rank_range=rank_range
                             )
                         if records:
-                            st.success(
-                                f"🎯 Match penuh (4/4 posisi): {full_match} / {len(records)} draw  →  **{hit_rate}%**"
+                            baseline = backtest_random_baseline(
+                                draws, recent_n=recent_n, rounds=rounds, rank_range=rank_range, combined=is_combined
                             )
+                            bcol1, bcol2 = st.columns(2)
+                            with bcol1:
+                                st.success(
+                                    f"🧮 Formula Break: {full_match} / {len(records)} draw  →  **{hit_rate}%**"
+                                )
+                            with bcol2:
+                                st.info(
+                                    f"🎲 Baseline Rawak (jangkaan): {baseline['expected_full_match']} / "
+                                    f"{baseline['evaluated']} draw  →  **{baseline['baseline_rate']}%**"
+                                )
+                            if hit_rate > baseline["baseline_rate"]:
+                                st.caption(
+                                    "✅ Formula Break mengatasi jangkaan rawak murni untuk tetapan ini — "
+                                    "petunjuk mungkin ada corak (bukan bukti muktamad)."
+                                )
+                            else:
+                                st.caption(
+                                    "⚠️ Formula Break TIDAK mengatasi (atau setara sahaja dgn) jangkaan rawak murni "
+                                    "untuk tetapan ini — anggap keputusan sbg sekadar nasib buat masa ini."
+                                )
                             st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
                         else:
                             st.warning("Data tidak mencukupi untuk backtest dengan tetapan ini.")
+
+                with st.expander("📐 Ujian Statistik — Chi-Square (taburan digit)"):
+                    st.caption(
+                        "Uji sama ada taburan digit 0–9 tiap posisi (P1–P4) menyimpang secara signifikan drpd "
+                        "taburan seragam (rawak sepenuhnya). p < 0.05 = mungkin ada corak; p ≥ 0.05 = nampak macam rawak."
+                    )
+                    try:
+                        chi_results = chi_square_uniformity(draws, recent_n=recent_n)
+                        st.dataframe(pd.DataFrame(chi_results), use_container_width=True, hide_index=True)
+                        n_sig = sum(1 for r in chi_results if r["Signifikan (p<0.05)"].startswith("Ya"))
+                        if n_sig == 0:
+                            st.caption(
+                                "⚠️ Tiada posisi menunjukkan penyimpangan signifikan drpd rawak — taburan digit "
+                                "sepanjang N draw ini secara statistik nampak seragam/rawak."
+                            )
+                        else:
+                            st.caption(f"ℹ️ {n_sig} drpd 4 posisi menunjukkan penyimpangan signifikan (p<0.05).")
+                    except ValueError as e:
+                        st.error(str(e))
+
+                with st.expander("🧬 Ensemble — Digit Stabil Merentasi Beberapa N"):
+                    st.caption(
+                        "Digit yang KEKAL dlm julat rank yang sama merentasi beberapa saiz tetingkap N — "
+                        "kurang berkemungkinan cuma nois drpd satu saiz sampel yang dipilih secara sembarangan."
+                    )
+                    n_options = sorted({n for n in [20, 30, 50, 100, 150, 200] if n <= len(draws)})
+                    chosen_n = st.multiselect(
+                        "Saiz N untuk dibandingkan:", options=n_options,
+                        default=[n for n in [30, 50, 100] if n in n_options], key="ens_n_values",
+                    )
+                    if len(chosen_n) < 2:
+                        st.info("Pilih sekurang-kurangnya 2 saiz N untuk perbandingan.")
+                    else:
+                        try:
+                            ens_results = ensemble_stable_digits(draws, n_values=chosen_n, rank_range=rank_range)
+                            st.dataframe(pd.DataFrame(ens_results), use_container_width=True, hide_index=True)
+                        except ValueError as e:
+                            st.error(str(e))
             except ValueError as e:
                 st.error(str(e))
 
@@ -1174,9 +1304,10 @@ with tab_history:
         elif len(target_digits) != 4 or not all(len(t) == 1 and t.isdigit() for t in target_digits):
             st.error("❌ Format tidak sah — masukkan tepat 4 digit tunggal, dipisah space (cth: 1 2 3 4).")
         else:
+            dkey = _draws_cache_key(draws)
             try:
-                records = scan_digit_history(
-                    draws, target_digits, recent_n=hist_recent_n, rank_range=hist_rank_range, min_match=min_match
+                records = _cached_scan_digit_history(
+                    draws, dkey, target_digits, hist_recent_n, hist_rank_range, min_match
                 )
             except ValueError as e:
                 st.error(str(e))
@@ -1191,20 +1322,67 @@ with tab_history:
             rank_start, rank_end = hist_rank_range
             width = rank_end - rank_start + 1
             try:
-                recs = recommend_rank_range(draws, target_digits, recent_n=hist_recent_n, width=width)
+                recs = _cached_recommend_rank_range(draws, dkey, target_digits, hist_recent_n, width)
             except ValueError as e:
                 recs = []
                 st.error(str(e))
 
             if recs:
                 best = recs[0]
-                st.markdown("**💡 Cadangan Julat Base**")
-                st.success(
-                    f"**{best['Julat']}** — julat ini paling banyak **match penuh (4/4)** dengan nombor "
-                    f"sasaran sepanjang sejarah ({best['Match Penuh (4/4)']} match penuh, "
-                    f"{best['Jumlah Padanan Digit']} jumlah padanan digit, drpd {best['Draw Diuji']} draw diuji). "
-                    f"Lebar julat dikekalkan sama (lebar {width}) supaya adil berbanding tetapan semasa."
+                best_evaluated = best["Draw Diuji"]
+                best_rate = round(best["Match Penuh (4/4)"] / best_evaluated * 100, 2) if best_evaluated else 0.0
+                theoretical_baseline = round((width / 10) ** 4 * 100, 3)
+                current_entry = next((r for r in recs if r["rank_range"] == tuple(hist_rank_range)), None)
+
+                next_draw_date = max(_last_draw_date + timedelta(days=1), _today_my)
+
+                st.markdown(
+                    f"**🎯 Ramalan & Cadangan Base — Draw Akan Datang ({next_draw_date.strftime('%d/%m/%Y')})**"
                 )
+                st.success(
+                    f"Untuk nombor sasaran **{''.join(target_digits)}**, base yang dicadangkan: **{best['Julat']}**"
+                )
+
+                reasons = [
+                    f"🎯 **{best['Match Penuh (4/4)']} match penuh (4/4)** drpd {best_evaluated} draw diuji "
+                    f"sepanjang sejarah (**{best_rate}%**) — PALING TINGGI antara semua julat lebar {width} yang dicuba."
+                ]
+                if best_rate > theoretical_baseline:
+                    mult = round(best_rate / theoretical_baseline, 1) if theoretical_baseline else None
+                    reasons.append(
+                        f"📊 Ini **{mult}× ganda** lebih tinggi drpd jangkaan rawak murni ({theoretical_baseline}% "
+                        f"untuk lebar julat {width}) — petunjuk mungkin ada corak, bukan sekadar nasib."
+                    )
+                else:
+                    reasons.append(
+                        f"⚠️ Kadar ini ({best_rate}%) hampir sama / lebih rendah drpd jangkaan rawak murni "
+                        f"({theoretical_baseline}%) — anggap cadangan ni sbg panduan sahaja, bukan bukti corak sebenar."
+                    )
+                if current_entry and current_entry["Julat"] != best["Julat"]:
+                    diff = best["Match Penuh (4/4)"] - current_entry["Match Penuh (4/4)"]
+                    reasons.append(
+                        f"🔁 Berbanding tetapan semasa anda (**{current_entry['Julat']}**, "
+                        f"{current_entry['Match Penuh (4/4)']} match penuh), julat dicadangkan ada "
+                        f"**{diff:+d} match penuh**."
+                    )
+                elif current_entry:
+                    reasons.append(f"✅ Ini SAMA dengan tetapan semasa anda (**{current_entry['Julat']}**) — tak perlu tukar.")
+
+                for r in reasons:
+                    st.markdown(f"- {r}")
+
+                try:
+                    recommended_base = generate_break_base(draws, recent_n=hist_recent_n, rank_range=best["rank_range"])
+                    st.markdown("**🔢 Base sebenar (julat dicadangkan, data terkini — boleh terus pakai):**")
+                    st.code("\n".join(" ".join(p) for p in recommended_base), language="text")
+                except ValueError as e:
+                    st.error(str(e))
+
+                st.caption(
+                    "⚠️ Cadangan ni berdasarkan corak sejarah sahaja (backtest retrospektif) — bukan jaminan "
+                    "keputusan sebenar. Sila guna sebagai panduan, bukan kepastian."
+                )
+
                 with st.expander("Lihat perbandingan semua julat (lebar sama)"):
                     cmp_df = pd.DataFrame(recs)[["Julat", "Jumlah Padanan Digit", "Match Penuh (4/4)", "Draw Diuji"]]
                     st.dataframe(cmp_df, use_container_width=True, hide_index=True)
