@@ -13,6 +13,7 @@ seterusnya.
 """
 
 from collections import Counter
+import math
 
 DEFAULT_RECENT_N = 50
 DEFAULT_RANK_RANGE = (6, 10)
@@ -256,4 +257,140 @@ def recommend_rank_range(
         })
 
     results.sort(key=lambda r: (r["Match Penuh (4/4)"], r["Jumlah Padanan Digit"]), reverse=True)
+    return results
+
+
+def backtest_random_baseline(
+    draws: list[dict],
+    recent_n: int = DEFAULT_RECENT_N,
+    rounds: int = 10,
+    rank_range: tuple[int, int] = DEFAULT_RANK_RANGE,
+    combined: bool = False,
+) -> dict:
+    """
+    Baseline "rawak" untuk banding adil dengan Formula Break: bagi setiap
+    draw yang diuji (SAMA draw macam backtest_break/backtest_combined),
+    kira LEBAR base sebenar (tunggal atau gabungan) bagi setiap posisi,
+    lalu kira kebarangkalian TEPAT (secara matematik, bukan simulasi)
+    base RAWAK dengan lebar yang SAMA akan match penuh (4/4) — iaitu
+    hasil darab (lebar_i / 10) bagi 4 posisi.
+
+    Ini jawab: "Adakah Formula Break lebih baik drpd cuma teka rawak
+    dengan bilangan digit calon yang sama?" — kalau hit rate Formula
+    Break hampir sama dgn baseline ni, method tu mungkin tiada kelebihan
+    sebenar drpd nasib.
+    """
+    probs = []
+    for i in range(1, rounds + 1):
+        past = draws[:-i]
+        min_needed = recent_n + 1 if combined else recent_n
+        if len(past) < min_needed:
+            break
+        try:
+            if combined:
+                base_today = generate_break_base(past, recent_n, rank_range)
+                base_yesterday = generate_break_base(past[:-1], recent_n, rank_range)
+                base = combine_bases(base_today, base_yesterday)
+            else:
+                base = generate_break_base(past, recent_n, rank_range)
+        except ValueError:
+            continue
+
+        p = 1.0
+        for pos in base:
+            p *= min(len(pos), 10) / 10
+        probs.append(p)
+
+    if not probs:
+        return {"evaluated": 0, "expected_full_match": 0.0, "baseline_rate": 0.0}
+
+    avg_prob = sum(probs) / len(probs)
+    return {
+        "evaluated": len(probs),
+        "expected_full_match": round(avg_prob * len(probs), 2),
+        "baseline_rate": round(avg_prob * 100, 2),
+    }
+
+
+def _normal_cdf(z: float) -> float:
+    """CDF fungsi normal piawai N(0,1), guna fungsi erf terbina-dalam Python."""
+    return 0.5 * (1 + math.erf(z / math.sqrt(2)))
+
+
+def chi_square_uniformity(
+    draws: list[dict],
+    recent_n: int = DEFAULT_RECENT_N,
+) -> list[dict]:
+    """
+    Ujian Chi-Square "goodness of fit" bagi SETIAP posisi (P1–P4): adakah
+    taburan 10 digit (0–9) dalam `recent_n` draw terkini menyimpang secara
+    signifikan drpd taburan SERAGAM (rawak sepenuhnya)?
+
+    Jika TIDAK signifikan (p besar), ini petunjuk kuat taburan digit tu
+    memang dah dekat dgn rawak — jadi "rank 6–10" cuma nois dari saiz
+    sampel, bukan corak sebenar. df sentiasa 9 (10 digit - 1), jadi
+    p-value dikira guna hampiran Wilson–Hilferty (chi-square -> normal),
+    tanpa perlu pakej scipy.
+    """
+    if len(draws) < recent_n:
+        raise ValueError(f"Draw tidak mencukupi. Perlu {recent_n}, ada {len(draws)}.")
+
+    recent = draws[-recent_n:]
+    k = 9  # darjah kebebasan (10 digit - 1)
+    results = []
+    for i in range(4):
+        col_digits = [f"{int(d['number']):04d}"[i] for d in recent]
+        counts = Counter(col_digits)
+        observed = [counts.get(str(d), 0) for d in range(10)]
+        expected = recent_n / 10
+        chi2 = sum((o - expected) ** 2 / expected for o in observed)
+
+        z = ((chi2 / k) ** (1 / 3) - (1 - 2 / (9 * k))) / math.sqrt(2 / (9 * k))
+        p_value = round(1 - _normal_cdf(z), 4)
+
+        results.append({
+            "Posisi": f"P{i + 1}",
+            "Chi-Square": round(chi2, 2),
+            "p-value (anggaran)": p_value,
+            "Signifikan (p<0.05)": "Ya ⚠️" if p_value < 0.05 else "Tidak",
+        })
+    return results
+
+
+def ensemble_stable_digits(
+    draws: list[dict],
+    n_values: list[int],
+    rank_range: tuple[int, int] = DEFAULT_RANK_RANGE,
+) -> list[dict]:
+    """
+    Jana base Formula Break bagi BEBERAPA saiz tetingkap N (cth: 30, 50,
+    100) serentak, dan cari digit yang KEKAL dlm julat rank yang sama
+    merentasi SEMUA N tersebut bagi setiap posisi. Digit yang stabil
+    macam ni kurang berkemungkinan cuma nois drpd saiz sampel yang
+    dipilih secara sembarangan.
+    """
+    n_values = sorted({n for n in n_values if n <= len(draws) and n > 0})
+    if not n_values:
+        raise ValueError("Tiada saiz N yang sah (semua > jumlah draw tersedia).")
+
+    bases_by_n = {}
+    for n in n_values:
+        try:
+            bases_by_n[n] = generate_break_base(draws, recent_n=n, rank_range=rank_range)
+        except ValueError:
+            continue
+    if not bases_by_n:
+        raise ValueError("Tiada base yang berjaya dijana bagi mana-mana N.")
+
+    results = []
+    for i in range(4):
+        sets_per_n = {n: set(bases_by_n[n][i]) for n in bases_by_n}
+        stable = set.intersection(*sets_per_n.values())
+        row = {
+            "Posisi": f"P{i + 1}",
+            "Digit Stabil (semua N)": ", ".join(sorted(stable)) if stable else "—",
+        }
+        for n in bases_by_n:
+            row[f"N={n}"] = ", ".join(bases_by_n[n][i])
+        results.append(row)
     return results
