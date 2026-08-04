@@ -35,6 +35,7 @@ from core.formula_break import (
     ensemble_stable_digits,
     generate_break_base,
     recommend_rank_range,
+    recommend_rank_range_general,
     scan_digit_history,
 )
 from core.predictions_log import log_prediction, prediction_summary, reconcile_predictions
@@ -998,6 +999,55 @@ with tab_base:
 
         target_date_str = target_date.strftime("%Y-%m-%d")
         draws_asof = [d for d in draws if d["date"] < target_date_str]
+
+        # Cadangan julat rank SECARA UMUM — tak perlu nombor sasaran. Guna backtest
+        # SEBENAR (keputusan draw yang betul-betul keluar) terhadap draws_asof, supaya
+        # tak bocor data masa depan bila target_date bukan "esok".
+        rec_rounds = max(1, min(30, len(draws_asof) - DEFAULT_RECENT_N))
+        try:
+            gen_recs = recommend_rank_range_general(
+                draws_asof, recent_n=DEFAULT_RECENT_N, rounds=rec_rounds, width=5, combined=False
+            )
+            best_gen = gen_recs[0]
+            tied = [r for r in gen_recs if r["Match Penuh (4/4)"] == best_gen["Match Penuh (4/4)"]]
+
+            reason_lines = [
+                f"🎯 **{best_gen['Match Penuh (4/4)']} match penuh (4/4)** drpd {best_gen['Draw Diuji']} draw lepas "
+                f"diuji (**{best_gen['Hit Rate (%)']}%**) — TERBAIK antara semua julat lebar 5."
+            ]
+            if best_gen["Baseline Rawak (%)"] and best_gen["Hit Rate (%)"] > best_gen["Baseline Rawak (%)"]:
+                mult = round(best_gen["Hit Rate (%)"] / best_gen["Baseline Rawak (%)"], 1)
+                reason_lines.append(
+                    f"📊 {mult}× ganda lebih tinggi drpd jangkaan rawak murni ({best_gen['Baseline Rawak (%)']}%)."
+                )
+            else:
+                reason_lines.append(
+                    f"⚠️ Hampir sama / lebih rendah drpd jangkaan rawak murni ({best_gen['Baseline Rawak (%)']}%) "
+                    "— anggap sbg panduan kasar sahaja."
+                )
+            if len(tied) > 1:
+                other_labels = ", ".join(r["Julat"] for r in tied if r["Julat"] != best_gen["Julat"])
+                reason_lines.append(
+                    f"ℹ️ {len(tied)} julat seri pada skor sama ({other_labels}) — sampel {best_gen['Draw Diuji']} draw "
+                    "agak kecil, jadi anggap beza ni sbg petunjuk kasar, bukan pasti."
+                )
+
+            st.markdown("**🎯 Cadangan Julat Base — Draw Ini**")
+            st.success(f"Untuk draw pada **{target_date_str}**, cadangan guna **{best_gen['Julat']}** — sebab:")
+            for line in reason_lines:
+                st.markdown(f"- {line}")
+
+            if st.button(f"✅ Guna {best_gen['Julat']} Sekarang", key="base_apply_rec"):
+                st.session_state["base_rank"] = best_gen["rank_range"]
+                st.rerun()
+
+            with st.expander("Lihat perbandingan semua julat (lebar 5)"):
+                cmp_df = pd.DataFrame(gen_recs)[
+                    ["Julat", "Match Penuh (4/4)", "Hit Rate (%)", "Baseline Rawak (%)", "Draw Diuji"]
+                ]
+                st.dataframe(cmp_df, use_container_width=True, hide_index=True)
+        except ValueError as e:
+            st.caption(f"ℹ️ Cadangan julat belum tersedia: {e}")
 
         insufficient_data = len(draws_asof) < DEFAULT_RECENT_N
         if insufficient_data:
