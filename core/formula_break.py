@@ -394,3 +394,54 @@ def ensemble_stable_digits(
             row[f"N={n}"] = ", ".join(bases_by_n[n][i])
         results.append(row)
     return results
+
+
+def recommend_rank_range_general(
+    draws: list[dict],
+    recent_n: int = DEFAULT_RECENT_N,
+    rounds: int = 30,
+    width: int = 5,
+    combined: bool = False,
+) -> list[dict]:
+    """
+    Cadangan julat rank SECARA UMUM — TIDAK perlu nombor sasaran. Bagi
+    SETIAP julat calon lebar sama (`width`) dlm 1–10, jalankan backtest
+    SEBENAR (kaedah sama seperti backtest_break/backtest_combined)
+    terhadap `rounds` draw terakhir, dan ranking ikut kadar match penuh
+    (4/4) SEBENAR terhadap keputusan yang betul-betul keluar (bukan
+    nombor khayalan/rekaan).
+
+    Ini jawab: "Julat rank mana paling BAIK PRESTASI SEBENARNYA
+    kebelakangan ni?" — sesuai utk cadangan base draw akan datang tanpa
+    perlu pengguna dah ada nombor dlm fikiran.
+    """
+    width = max(1, min(10, width))
+    min_needed = recent_n + 1 if combined else recent_n
+    if len(draws) < min_needed + 1:
+        raise ValueError(f"Draw tidak mencukupi utk backtest. Perlu sekurang-kurangnya {min_needed + 1}, ada {len(draws)}.")
+
+    results = []
+    for start in range(1, 10 - width + 2):
+        end = start + width - 1
+        rank_range = (start, end)
+        if combined:
+            records, full_match, hit_rate = backtest_combined(draws, recent_n, rounds, rank_range)
+        else:
+            records, full_match, hit_rate = backtest_break(draws, recent_n, rounds, rank_range)
+        if not records:
+            continue
+        baseline = backtest_random_baseline(draws, recent_n, rounds, rank_range, combined)
+        results.append({
+            "Julat": f"R{start}-R{end}",
+            "rank_range": rank_range,
+            "Match Penuh (4/4)": full_match,
+            "Draw Diuji": len(records),
+            "Hit Rate (%)": hit_rate,
+            "Baseline Rawak (%)": baseline["baseline_rate"],
+        })
+
+    if not results:
+        raise ValueError("Tiada julat calon berjaya diuji — cuba kurangkan bilangan draw diuji (rounds).")
+
+    results.sort(key=lambda r: (r["Match Penuh (4/4)"], r["Hit Rate (%)"]), reverse=True)
+    return results
