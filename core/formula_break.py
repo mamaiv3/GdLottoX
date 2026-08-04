@@ -445,3 +445,53 @@ def recommend_rank_range_general(
 
     results.sort(key=lambda r: (r["Match Penuh (4/4)"], r["Hit Rate (%)"]), reverse=True)
     return results
+
+
+def recommend_recent_n(
+    draws: list[dict],
+    n_candidates: list[int],
+    rounds: int = 30,
+    rank_range: tuple[int, int] = DEFAULT_RANK_RANGE,
+    combined: bool = False,
+) -> list[dict]:
+    """
+    Cari saiz tetingkap N (`recent_n`) yang PALING BAIK PRESTASI SEBENARNYA
+    — jawapan terus kpd "berapa banyak draw terkini patut diguna utk kira
+    Formula Break" bila data dah banyak (cth: 2000+ draw), supaya tak
+    payah cuba satu-satu secara manual.
+
+    Bagi SETIAP N calon, jalankan backtest SEBENAR (kaedah sama macam
+    backtest_break/backtest_combined) terhadap `rounds` draw terakhir,
+    ranking ikut match penuh (4/4) SEBENAR. `rank_range` dikekalkan tetap
+    (guna tetapan semasa) supaya ini fokus semata-mata kepada kesan N —
+    kalau nak cari rank_range terbaik pula, guna recommend_rank_range_general.
+    """
+    n_candidates = sorted({n for n in n_candidates if 10 <= n <= len(draws)})
+    if not n_candidates:
+        raise ValueError("Tiada saiz N yang sah (semua < 10 atau > jumlah draw tersedia).")
+
+    results = []
+    for n in n_candidates:
+        min_needed = n + 1 if combined else n
+        if len(draws) < min_needed + rounds:
+            continue  # tak cukup draw utk uji `rounds` pusingan penuh bagi N ni
+        if combined:
+            records, full_match, hit_rate = backtest_combined(draws, n, rounds, rank_range)
+        else:
+            records, full_match, hit_rate = backtest_break(draws, n, rounds, rank_range)
+        if not records:
+            continue
+        baseline = backtest_random_baseline(draws, n, rounds, rank_range, combined)
+        results.append({
+            "N (recent_n)": n,
+            "Match Penuh (4/4)": full_match,
+            "Draw Diuji": len(records),
+            "Hit Rate (%)": hit_rate,
+            "Baseline Rawak (%)": baseline["baseline_rate"],
+        })
+
+    if not results:
+        raise ValueError("Tiada saiz N berjaya diuji — cuba kurangkan bilangan draw diuji (rounds) atau saiz N.")
+
+    results.sort(key=lambda r: (r["Match Penuh (4/4)"], r["Hit Rate (%)"]), reverse=True)
+    return results
