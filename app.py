@@ -36,6 +36,7 @@ from core.formula_break import (
     generate_break_base,
     recommend_rank_range,
     recommend_rank_range_general,
+    recommend_recent_n,
     scan_digit_history,
 )
 from core.predictions_log import log_prediction, prediction_summary, reconcile_predictions
@@ -1280,6 +1281,57 @@ with tab_break:
                             st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
                         else:
                             st.warning("Data tidak mencukupi untuk backtest dengan tetapan ini.")
+
+                with st.expander("🔍 Cari N (Jumlah Draw Terkini) Terbaik"):
+                    st.caption(
+                        "Data anda mungkin dah terkumpul banyak (cth: 2000+ draw) tapi default cuma guna "
+                        "N=50 draw terkini. Function ni cuba beberapa saiz N secara automatik & backtest "
+                        "SEBENAR (keputusan draw yang betul-betul keluar) — tak payah cuba satu-satu. "
+                        "Julat rank (P1–P4) dikekalkan ikut tetapan semasa di atas — ni fokus kesan N sahaja."
+                    )
+                    n_all_options = sorted({
+                        n for n in [30, 50, 70, 100, 150, 200, 300, 500, 750, 1000, 1500, 2000, 3000]
+                        if n <= len(draws)
+                    })
+                    n_default = [n for n in [30, 50, 100, 200, 500] if n in n_all_options] or n_all_options[:5]
+                    n_candidates_sel = st.multiselect(
+                        "Saiz N untuk dibandingkan:", options=n_all_options, default=n_default, key="n_search_candidates",
+                    )
+                    ncol1, ncol2 = st.columns(2)
+                    n_search_rounds = ncol1.slider(
+                        "Bilangan draw lepas untuk diuji:", 10, 100, 30, 5, key="n_search_rounds"
+                    )
+                    n_search_combined = ncol2.checkbox(
+                        "Guna Base Gabungan (bukan tunggal)", key="n_search_combined"
+                    )
+
+                    if len(n_candidates_sel) < 2:
+                        st.info("Pilih sekurang-kurangnya 2 saiz N untuk perbandingan.")
+                    elif st.button("🚀 Cari N Terbaik", key="n_search_run"):
+                        try:
+                            with st.spinner("Menguji setiap saiz N..."):
+                                n_results = recommend_recent_n(
+                                    draws, n_candidates_sel, rounds=n_search_rounds,
+                                    rank_range=rank_range, combined=n_search_combined,
+                                )
+                            best_n = n_results[0]
+                            st.success(
+                                f"🏆 **N={best_n['N (recent_n)']}** paling baik prestasi sebenarnya — "
+                                f"{best_n['Match Penuh (4/4)']} match penuh drpd {best_n['Draw Diuji']} draw "
+                                f"diuji (**{best_n['Hit Rate (%)']}%**), berbanding baseline rawak "
+                                f"{best_n['Baseline Rawak (%)']}%."
+                            )
+                            st.dataframe(pd.DataFrame(n_results), use_container_width=True, hide_index=True)
+                            if st.button(f"✅ Guna N={best_n['N (recent_n)']} Sekarang", key="n_search_apply"):
+                                st.session_state["break_n"] = min(best_n["N (recent_n)"], len(draws))
+                                st.rerun()
+                            st.caption(
+                                "⚠️ Berdasarkan backtest retrospektif sahaja — bukan jaminan keputusan akan datang. "
+                                "N besar guna lebih banyak sejarah (lebih stabil tapi mungkin kurang responsif "
+                                "kpd corak terkini); N kecil sebaliknya."
+                            )
+                        except ValueError as e:
+                            st.error(str(e))
 
                 with st.expander("📐 Ujian Statistik — Chi-Square (taburan digit)"):
                     st.caption(
