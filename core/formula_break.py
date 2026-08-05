@@ -495,3 +495,57 @@ def recommend_recent_n(
 
     results.sort(key=lambda r: (r["Match Penuh (4/4)"], r["Hit Rate (%)"]), reverse=True)
     return results
+
+
+def recommend_base_config(
+    draws: list[dict],
+    n_candidates: list[int],
+    rounds: int = 30,
+    width: int = 5,
+    combined: bool = False,
+) -> list[dict]:
+    """
+    Cadangan GABUNGAN — cari pasangan (N, julat rank) TERBAIK SERENTAK,
+    bukan satu-satu berasingan. Sebab dua parameter ni saling berkait:
+    N terbaik utk satu julat R blm tentu terbaik utk julat R lain (dah
+    dibuktikan secara empirik — tukar R, N terbaik pun berubah).
+
+    Bagi SETIAP gabungan (N calon × julat calon lebar sama `width`),
+    jalankan backtest SEBENAR (kaedah sama macam backtest_break /
+    backtest_combined), ranking ikut match penuh (4/4) SEBENAR terhadap
+    keputusan draw yang betul-betul keluar.
+    """
+    n_candidates = sorted({n for n in n_candidates if 10 <= n <= len(draws)})
+    width = max(1, min(10, width))
+    if not n_candidates:
+        raise ValueError("Tiada saiz N yang sah (semua < 10 atau > jumlah draw tersedia).")
+
+    range_candidates = [(s, s + width - 1) for s in range(1, 10 - width + 2)]
+
+    results = []
+    for n in n_candidates:
+        min_needed = n + 1 if combined else n
+        if len(draws) < min_needed + rounds:
+            continue
+        for start, end in range_candidates:
+            rank_range = (start, end)
+            if combined:
+                records, full_match, hit_rate = backtest_combined(draws, n, rounds, rank_range)
+            else:
+                records, full_match, hit_rate = backtest_break(draws, n, rounds, rank_range)
+            if not records:
+                continue
+            results.append({
+                "N (recent_n)": n,
+                "Julat": f"R{start}-R{end}",
+                "rank_range": rank_range,
+                "Match Penuh (4/4)": full_match,
+                "Draw Diuji": len(records),
+                "Hit Rate (%)": hit_rate,
+            })
+
+    if not results:
+        raise ValueError("Tiada gabungan berjaya diuji — cuba kurangkan bilangan draw diuji (rounds) atau saiz N.")
+
+    results.sort(key=lambda r: (r["Match Penuh (4/4)"], r["Hit Rate (%)"]), reverse=True)
+    return results
