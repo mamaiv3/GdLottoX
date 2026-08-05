@@ -34,7 +34,6 @@ from core.formula_break import (
     combine_bases,
     ensemble_stable_digits,
     generate_break_base,
-    recommend_base_config,
     recommend_rank_range,
     recommend_rank_range_general,
     recommend_recent_n,
@@ -864,8 +863,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_dash, tab_base, tab_history, tab_wheel, tab_data = st.tabs(
-    ["📊 Dashboard", "🔮 Base", "🔎 Semak Nombor", "🎡 Wheelpick", "📋 Data Draw"]
+tab_dash, tab_base, tab_break, tab_history, tab_wheel, tab_data = st.tabs(
+    ["📊 Dashboard", "🔮 Base", "🧮 Formula Break", "🕘 History", "🎡 Wheelpick", "📋 Data Draw"]
 )
 
 # ============================================================= DASHBOARD ===
@@ -961,19 +960,20 @@ with tab_dash:
 
 # ===================================================================== BASE ===
 with tab_base:
-    section_title(
-        "🔮", "Base — Formula Break & Kad Kongsi",
-        "Satu tempat: tetapkan N &amp; julat rank, dapatkan cadangan, jana base, backtest — "
-        "semua guna tarikh &amp; tetapan yang SAMA (tak payah ulang set kat tab lain).",
-    )
+    section_title("🔮", "Base Draw — Kad Kongsi", "Gambar Base + satu senarai Top 10, siap muat turun/screenshot untuk Telegram.")
 
-    if len(draws) < 20:
-        st.info(f"ℹ️ Perlu sekurang-kurangnya 20 draw untuk mula (ada {len(draws)}). Tambah draw di tab **📋 Data Draw**.")
+    if len(draws) < DEFAULT_RECENT_N:
+        st.info(
+            f"ℹ️ Perlu sekurang-kurangnya {DEFAULT_RECENT_N} draw untuk jana kad ini "
+            f"(ada {len(draws)}). Tambah draw di tab **📋 Data Draw**."
+        )
     else:
-        # ---- 1. Tarikh — SATU sahaja, dikongsi SEMUA bahagian di bawah (grid, kad,
-        # cadangan, backtest). Base secara asal disediakan UNTUK draw seterusnya
-        # (belum keluar), tapi bagi pilihan tarikh supaya boleh semak/jana balik
-        # base bagi mana-mana hari — lepas atau depan.
+        # Base secara asal disediakan UNTUK draw seterusnya (belum keluar) — dikira
+        # drpd (tarikh draw terakhir + 1 hari) vs tarikh sistem hari ini, ambil yang
+        # lewat. Ini jadi "auto". Tapi bila draws.txt tak sempat dikemas kini (cth:
+        # Streamlit reset & data kena tarik semula), "auto" ni terus lompat ke esok
+        # walhal user baru nak semak base utk hari ini. Jadi bagi pilihan tarikh
+        # supaya boleh lihat/jana semula base bagi mana-mana hari — lepas atau depan.
         today_my = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).date()
         last_draw_date = datetime.strptime(last_draw["date"], "%Y-%m-%d").date()
         auto_target_date = max(last_draw_date + timedelta(days=1), today_my)
@@ -987,8 +987,8 @@ with tab_base:
                 min_value=first_draw_date,
                 max_value=today_my + timedelta(days=7),
                 key="base_target_date",
-                help="SEMUA bahagian di bawah (base, kad, cadangan, backtest) guna draw "
-                     "SEBELUM tarikh ini sahaja — pilih hari lain utk semak balik.",
+                help="Base akan dijana guna draw SEBELUM tarikh ini sahaja — pilih hari "
+                     "lain (lepas/depan) utk semak base hari tersebut.",
             )
         with dcol2:
             st.markdown(
@@ -1000,292 +1000,384 @@ with tab_base:
 
         target_date_str = target_date.strftime("%Y-%m-%d")
         draws_asof = [d for d in draws if d["date"] < target_date_str]
-        insufficient_data = len(draws_asof) < 20
 
+        # Cadangan julat rank SECARA UMUM — tak perlu nombor sasaran. Guna backtest
+        # SEBENAR (keputusan draw yang betul-betul keluar) terhadap draws_asof, supaya
+        # tak bocor data masa depan bila target_date bukan "esok".
+        rec_rounds = max(1, min(30, len(draws_asof) - DEFAULT_RECENT_N))
+        try:
+            gen_recs = recommend_rank_range_general(
+                draws_asof, recent_n=DEFAULT_RECENT_N, rounds=rec_rounds, width=5, combined=False
+            )
+            best_gen = gen_recs[0]
+            tied = [r for r in gen_recs if r["Match Penuh (4/4)"] == best_gen["Match Penuh (4/4)"]]
+
+            reason_lines = [
+                f"🎯 **{best_gen['Match Penuh (4/4)']} match penuh (4/4)** drpd {best_gen['Draw Diuji']} draw lepas "
+                f"diuji (**{best_gen['Hit Rate (%)']}%**) — TERBAIK antara semua julat lebar 5."
+            ]
+            if best_gen["Baseline Rawak (%)"] and best_gen["Hit Rate (%)"] > best_gen["Baseline Rawak (%)"]:
+                mult = round(best_gen["Hit Rate (%)"] / best_gen["Baseline Rawak (%)"], 1)
+                reason_lines.append(
+                    f"📊 {mult}× ganda lebih tinggi drpd jangkaan rawak murni ({best_gen['Baseline Rawak (%)']}%)."
+                )
+            else:
+                reason_lines.append(
+                    f"⚠️ Hampir sama / lebih rendah drpd jangkaan rawak murni ({best_gen['Baseline Rawak (%)']}%) "
+                    "— anggap sbg panduan kasar sahaja."
+                )
+            if len(tied) > 1:
+                other_labels = ", ".join(r["Julat"] for r in tied if r["Julat"] != best_gen["Julat"])
+                reason_lines.append(
+                    f"ℹ️ {len(tied)} julat seri pada skor sama ({other_labels}) — sampel {best_gen['Draw Diuji']} draw "
+                    "agak kecil, jadi anggap beza ni sbg petunjuk kasar, bukan pasti."
+                )
+
+            st.markdown("**🎯 Cadangan Julat Base — Draw Ini**")
+            st.success(f"Untuk draw pada **{target_date_str}**, cadangan guna **{best_gen['Julat']}** — sebab:")
+            for line in reason_lines:
+                st.markdown(f"- {line}")
+
+            if st.button(f"✅ Guna {best_gen['Julat']} Sekarang", key="base_apply_rec"):
+                st.session_state["base_rank"] = best_gen["rank_range"]
+                st.rerun()
+
+            with st.expander("Lihat perbandingan semua julat (lebar 5)"):
+                cmp_df = pd.DataFrame(gen_recs)[
+                    ["Julat", "Match Penuh (4/4)", "Hit Rate (%)", "Baseline Rawak (%)", "Draw Diuji"]
+                ]
+                st.dataframe(cmp_df, use_container_width=True, hide_index=True)
+        except ValueError as e:
+            st.caption(f"ℹ️ Cadangan julat belum tersedia: {e}")
+
+        insufficient_data = len(draws_asof) < DEFAULT_RECENT_N
         if insufficient_data:
             st.warning(
                 f"⚠️ Hanya {len(draws_asof)} draw sebelum {target_date_str} — perlu "
-                f"sekurang-kurangnya 20 draw untuk jana apa-apa bagi tarikh ini. Cuba pilih tarikh lain."
+                f"sekurang-kurangnya {DEFAULT_RECENT_N} draw untuk jana base bagi tarikh "
+                f"ini. Cuba pilih tarikh lain."
             )
+            base = None
         else:
-            # ---- 2. Tetapan Base — SATU set, dikongsi SEMUA bahagian di bawah ----
-            st.markdown("**⚙️ Tetapan Base**")
-            bc1, bc2 = st.columns(2)
-            recent_n = bc1.slider(
-                "Jumlah draw terkini (N):", 20, len(draws_asof), min(DEFAULT_RECENT_N, len(draws_asof)), 5, key="base_n"
-            )
-            rank_range = bc2.select_slider(
-                "Julat rank digit:", options=list(range(1, 11)), value=DEFAULT_RANK_RANGE, key="base_rank"
-            )
-            st.caption(
-                "💡 Tetapan ni dipakai serentak oleh Base, Kad Kongsi, dan semua tool Analisis di bawah "
-                "— satu tempat, tak payah set berulang macam dulu."
-            )
-
-            # ---- 3. Cadangan Tetapan Terbaik (N + Julat serentak) ----
-            with st.expander("🎯 Cadangan Tetapan Terbaik (N + Julat serentak)"):
-                st.caption(
-                    "Cari pasangan N + Julat Rank TERBAIK SERENTAK guna backtest SEBENAR (keputusan draw "
-                    "yang betul-betul keluar) — bukan satu-satu berasingan, sebab dua tetapan ni saling "
-                    "berkait (N terbaik utk satu julat blm tentu terbaik utk julat lain)."
+            with st.expander("⚙️ Tetapan"):
+                style_options = list(STYLE_RENDERERS.keys())
+                base_style = st.selectbox(
+                    "🎨 Design kad:", style_options,
+                    format_func=lambda k: STYLE_RENDERERS[k][0],
+                    key="base_style",
                 )
-                n_all_options = sorted({
-                    n for n in [30, 50, 70, 100, 150, 200, 300, 500, 750, 1000, 1500, 2000, 3000]
-                    if n <= len(draws_asof)
-                })
-                n_default = [n for n in [30, 50, 100, 200, 500] if n in n_all_options] or n_all_options[:5]
-                rc1, rc2 = st.columns(2)
-                rec_n_candidates = rc1.multiselect(
-                    "Saiz N untuk dibandingkan:", options=n_all_options, default=n_default, key="rec_n_candidates",
+                bc1, bc2 = st.columns(2)
+                base_recent_n = bc1.slider(
+                    "Jumlah draw terkini:", 20, len(draws_asof), min(DEFAULT_RECENT_N, len(draws_asof)), 5, key="base_n"
                 )
-                rec_rounds_cfg = rc2.slider("Bilangan draw lepas untuk diuji:", 10, 100, 30, 5, key="rec_rounds_cfg")
-                rec_combined = st.checkbox("Guna Base Gabungan (bukan tunggal)", key="rec_combined")
+                base_rank_range = bc2.select_slider(
+                    "Julat rank digit:", options=list(range(1, 11)), value=DEFAULT_RANK_RANGE, key="base_rank"
+                )
+                bc3, bc4 = st.columns(2)
+                base_lot = bc3.text_input("Nilai Lot:", value="0.10", key="base_lot")
+                base_score_n = bc4.slider(
+                    "Draw untuk kira skor Top 10:",
+                    min(10, len(draws_asof)), len(draws_asof), min(DEFAULT_RECENT_N, len(draws_asof)), 5, key="base_score_n",
+                )
+                result_handle = st.text_input("Channel/Result handle:", value="@Breakcode4d", key="base_result_handle")
 
-                if len(rec_n_candidates) < 1:
-                    st.info("Pilih sekurang-kurangnya 1 saiz N untuk dicuba.")
-                elif st.button("🚀 Cari Cadangan Terbaik", key="rec_run"):
-                    try:
-                        with st.spinner("Menguji setiap gabungan N × Julat..."):
-                            width = rank_range[1] - rank_range[0] + 1
-                            combo_results = recommend_base_config(
-                                draws_asof, rec_n_candidates, rounds=rec_rounds_cfg,
-                                width=width, combined=rec_combined,
-                            )
-                        best_combo = combo_results[0]
-                        theoretical_baseline = round((width / 10) ** 4 * 100, 3)
-                        st.success(
-                            f"🏆 **N={best_combo['N (recent_n)']}, Julat {best_combo['Julat']}** paling baik — "
-                            f"{best_combo['Match Penuh (4/4)']} match penuh drpd {best_combo['Draw Diuji']} draw "
-                            f"diuji (**{best_combo['Hit Rate (%)']}%**), berbanding jangkaan rawak murni "
-                            f"{theoretical_baseline}% (lebar julat {width})."
-                        )
-                        st.dataframe(
-                            pd.DataFrame(combo_results).drop(columns=["rank_range"]),
-                            use_container_width=True, hide_index=True,
-                        )
-                        if st.button(
-                            f"✅ Guna N={best_combo['N (recent_n)']} + {best_combo['Julat']} Sekarang", key="rec_apply"
-                        ):
-                            st.session_state["base_n"] = min(best_combo["N (recent_n)"], len(draws_asof))
-                            st.session_state["base_rank"] = best_combo["rank_range"]
-                            st.rerun()
-                        st.caption(
-                            "⚠️ Berdasarkan backtest retrospektif sahaja — bukan jaminan keputusan akan datang. "
-                            "Julat rank dikekalkan lebar sama (ikut tetapan semasa) semasa carian, supaya adil."
-                        )
-                    except ValueError as e:
-                        st.error(str(e))
-
-            # ---- 4. Base (grid ringkas) ----
             try:
-                base = generate_break_base(draws_asof, recent_n=recent_n, rank_range=rank_range)
+                base = generate_break_base(draws_asof, recent_n=base_recent_n, rank_range=base_rank_range)
             except ValueError as e:
                 st.error(str(e))
                 base = None
 
-            if base:
-                rank_start, rank_end = rank_range
-                st.markdown("**🔢 Base (boleh salin terus):**")
+        if base:
+            date_label = target_date.strftime("%d/%m")
+            rank_start, rank_end = base_rank_range
+
+            actual_draw = next((d for d in draws if d["date"] == target_date_str), None)
+            if actual_draw:
+                flags = check_against_base(actual_draw["number"], base)
+                st.success(f"✅ Keputusan sebenar {target_date_str} : **{actual_draw['number']}**")
+                digit_chips(actual_draw["number"], flags)
+            else:
+                st.caption(f"ℹ️ Belum ada keputusan direkod untuk {target_date_str} — base ini jana sebagai unjuran.")
+                known_dates = {d["date"] for d in draws}
+                if st.button("📌 Log Ramalan Ini (Forward-Looking)", key="log_pred_btn"):
+                    ok, msg = log_prediction(
+                        target_date_str, base, base_recent_n, base_rank_range, "Base Tab", known_dates
+                    )
+                    (st.success if ok else st.error)(msg)
+                st.caption(
+                    "Simpan base ni SEKARANG (sblm keputusan keluar) — nanti boleh semak trek rekod sebenar "
+                    "di tab **📊 Dashboard**, bahagian \"Rekod Ramalan Sebenar\"."
+                )
+
+            hot_digits_input = st.text_input(
+                "✨ Nombor top hari ini (pisah dengan koma):",
+                value="", placeholder="cth: 4,9,2", key="base_hot_digits",
+            )
+            hot_digits = {d.strip() for d in hot_digits_input.split(",") if d.strip().isdigit() and len(d.strip()) == 1}
+
+            combos = generate_wheel_combos(base, lot=base_lot)
+            top10 = rank_combos(combos, draws_asof, recent_n=base_score_n, top_n=10)
+            top10_numbers = [r["Nombor"] for r in top10]
+
+            # Kombinasi Utama = pilihan TOP 1 drpd Top 10 (skor kekerapan sebenar
+            # gabungan P1–P4), bukan sekadar cantum digit rank-teratas tiap posisi
+            # secara berasingan — lebih tepat sbb dah kira skor kombinasi sebenar.
+            kombinasi_utama = top10[0]["Nombor"] if top10 else "".join(p[0] for p in base)
+
+            png_bytes = render_base_image(
+                base_style, base, rank_start, rank_end, kombinasi_utama, date_label,
+                result_handle, hot_digits, top10_numbers,
+            )
+            st.image(png_bytes, use_container_width=True)
+            st.download_button(
+                "🖼️ Muat Turun Gambar Base (PNG)",
+                data=png_bytes,
+                file_name=f"base_{base_style}_{date_label.replace('/', '-')}.png",
+                mime="image/png",
+                key="dl_base_png",
+            )
+            st.caption("Tekan lama / klik kanan gambar di atas untuk terus simpan atau screenshot.")
+
+            st.markdown(gold_top10_card(top10), unsafe_allow_html=True)
+
+            top10_line = ", ".join(top10_numbers)
+            share_text = (
+                f"🔮 {date_label} Breakcode Base Draw!!!!\n"
+                f"🕹 Belian bebas ikut anda ibox/tegak dimana\u00b2 rumah (Recommended GD Lotto)\n\n"
+                f"Result : {result_handle}\n"
+                f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n\n"
+                f"🏆 Kombinasi Utama : {kombinasi_utama}\n\n"
+                f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n"
+                f"🎯 Top 10 Set\n"
+                f"{top10_line}\n"
+                f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"
+            )
+
+            divider()
+            st.markdown("**📋 Teks Salin (untuk Telegram)** — guna ikon salin di kad di bawah:")
+            st.code(share_text, language="text")
+
+            st.download_button(
+                "💾 Muat Turun Teks (.txt)",
+                data=share_text.encode(),
+                file_name=f"base_{date_label.replace('/', '-')}.txt",
+                mime="text/plain",
+                key="dl_base_card",
+            )
+        elif not insufficient_data:
+            st.info("ℹ️ Tidak dapat jana base dengan tetapan semasa.")
+
+# ========================================================== FORMULA BREAK ===
+with tab_break:
+    section_title("🧮", "Formula Break — Jana Base")
+    st.markdown(
+        '<div class="bc4d-note">Ambil digit <strong>rank ke-6 hingga ke-10</strong> paling kerap '
+        "keluar bagi setiap posisi (P1–P4) — bukan digit yang paling 'panas'. Andaian: digit yang "
+        "sudah agak sejuk ini berpotensi 'break' masuk giliran seterusnya.</div>",
+        unsafe_allow_html=True,
+    )
+
+    if len(draws) < 20:
+        st.warning("⚠️ Data draw terlalu sedikit (<20). Tambah draw di tab **📋 Data Draw** dahulu.")
+    else:
+        # Sama macam tab Base — bagi pilihan tarikh supaya boleh jana/lihat base bagi
+        # mana-mana hari (lepas utk semak balik, atau depan utk unjuran).
+        today_my = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).date()
+        last_draw_date = datetime.strptime(last_draw["date"], "%Y-%m-%d").date()
+        auto_target_date = max(last_draw_date + timedelta(days=1), today_my)
+        first_draw_date = datetime.strptime(draws[0]["date"], "%Y-%m-%d").date()
+
+        bdcol1, bdcol2 = st.columns([2, 3])
+        with bdcol1:
+            break_target_date = st.date_input(
+                "🗓️ Tarikh Draw",
+                value=auto_target_date,
+                min_value=first_draw_date,
+                max_value=today_my + timedelta(days=7),
+                key="break_target_date",
+                help="Base akan dijana guna draw SEBELUM tarikh ini sahaja — pilih hari "
+                     "lain (lepas/depan) utk lihat base bagi hari tersebut.",
+            )
+        with bdcol2:
+            st.markdown(
+                f'<div class="bc4d-note" style="margin-top:28px">📌 Auto (draw seterusnya): '
+                f'<strong>{auto_target_date.strftime("%d/%m/%Y")}</strong> &middot; Hari ini: '
+                f'<strong>{today_my.strftime("%d/%m/%Y")}</strong></div>',
+                unsafe_allow_html=True,
+            )
+
+        break_target_date_str = break_target_date.strftime("%Y-%m-%d")
+        draws_asof_break = [d for d in draws if d["date"] < break_target_date_str]
+
+        if len(draws_asof_break) < 20:
+            st.warning(
+                f"⚠️ Hanya {len(draws_asof_break)} draw sebelum {break_target_date_str} — perlu "
+                f"sekurang-kurangnya 20 draw untuk jana base bagi tarikh ini. Cuba pilih tarikh lain."
+            )
+        else:
+            colA, colB = st.columns(2)
+            recent_n = colA.slider(
+                "Jumlah draw terkini:", 20, len(draws_asof_break), min(DEFAULT_RECENT_N, len(draws_asof_break)), 5, key="break_n"
+            )
+            rank_range = colB.select_slider(
+                "Julat rank digit (1 = paling panas):",
+                options=list(range(1, 11)),
+                value=DEFAULT_RANK_RANGE,
+                key="break_rank",
+            )
+
+            try:
+                base = generate_break_base(draws_asof_break, recent_n=recent_n, rank_range=rank_range)
+                st.markdown("**🔢 Base Formula Break (boleh salin):**")
                 st.code("\n".join(" ".join(p) for p in base), language="text")
 
-                actual_draw = next((d for d in draws if d["date"] == target_date_str), None)
-                if actual_draw:
-                    flags = check_against_base(actual_draw["number"], base)
-                    st.success(f"✅ Keputusan sebenar {target_date_str} : **{actual_draw['number']}**")
-                    digit_chips(actual_draw["number"], flags)
+                actual_draw_break = next((d for d in draws if d["date"] == break_target_date_str), None)
+                if actual_draw_break:
+                    flags = check_against_base(actual_draw_break["number"], base)
+                    st.success(f"✅ Keputusan sebenar {break_target_date_str} : **{actual_draw_break['number']}**")
+                    digit_chips(actual_draw_break["number"], flags)
                 else:
-                    st.caption(f"ℹ️ Belum ada keputusan direkod untuk {target_date_str} — base ini jana sebagai unjuran.")
-                    known_dates = {d["date"] for d in draws}
-                    if st.button("📌 Log Ramalan Ini (Forward-Looking)", key="log_pred_btn"):
-                        ok, msg = log_prediction(target_date_str, base, recent_n, rank_range, "Base Tab", known_dates)
-                        (st.success if ok else st.error)(msg)
-                    st.caption(
-                        "Simpan base ni SEKARANG (sblm keputusan keluar) — nanti boleh semak trek rekod sebenar "
-                        "di tab **📊 Dashboard**, bahagian \"Rekod Ramalan Sebenar\"."
+                    st.caption(f"ℹ️ Belum ada keputusan direkod untuk {break_target_date_str} — base ini jana sebagai unjuran.")
+
+                with st.expander("🔁 Backtest — uji prestasi sebenar"):
+                    bt_mode = st.radio(
+                        "Kaedah:", ["Base Tunggal", "Base Gabungan (2 Base)"], horizontal=True, key="bt_mode"
                     )
-
-                # ---- 5. Kad Kongsi (gambar shareable) ----
-                with st.expander("🎴 Jana Kad Kongsi (Gambar)"):
-                    style_options = list(STYLE_RENDERERS.keys())
-                    card_style = st.selectbox(
-                        "🎨 Design kad:", style_options, format_func=lambda k: STYLE_RENDERERS[k][0], key="base_style",
-                    )
-                    kc1, kc2 = st.columns(2)
-                    card_lot = kc1.text_input("Nilai Lot:", value="0.10", key="base_lot")
-                    card_score_n = kc2.slider(
-                        "Draw untuk kira skor Top 10:",
-                        min(10, len(draws_asof)), len(draws_asof), min(DEFAULT_RECENT_N, len(draws_asof)), 5,
-                        key="base_score_n",
-                    )
-                    card_result_handle = st.text_input("Channel/Result handle:", value="@Breakcode4d", key="base_result_handle")
-                    hot_digits_input = st.text_input(
-                        "✨ Nombor top hari ini (pisah dengan koma):",
-                        value="", placeholder="cth: 4,9,2", key="base_hot_digits",
-                    )
-                    hot_digits = {d.strip() for d in hot_digits_input.split(",") if d.strip().isdigit() and len(d.strip()) == 1}
-
-                    date_label = target_date.strftime("%d/%m")
-                    combos = generate_wheel_combos(base, lot=card_lot)
-                    top10 = rank_combos(combos, draws_asof, recent_n=card_score_n, top_n=10)
-                    top10_numbers = [r["Nombor"] for r in top10]
-
-                    # Kombinasi Utama = pilihan TOP 1 drpd Top 10 (skor kekerapan sebenar
-                    # gabungan P1–P4), bukan sekadar cantum digit rank-teratas tiap posisi
-                    # secara berasingan — lebih tepat sbb dah kira skor kombinasi sebenar.
-                    kombinasi_utama = top10[0]["Nombor"] if top10 else "".join(p[0] for p in base)
-
-                    png_bytes = render_base_image(
-                        card_style, base, rank_start, rank_end, kombinasi_utama, date_label,
-                        card_result_handle, hot_digits, top10_numbers,
-                    )
-                    st.image(png_bytes, use_container_width=True)
-                    st.download_button(
-                        "🖼️ Muat Turun Gambar Base (PNG)",
-                        data=png_bytes,
-                        file_name=f"base_{card_style}_{date_label.replace('/', '-')}.png",
-                        mime="image/png",
-                        key="dl_base_png",
-                    )
-                    st.caption("Tekan lama / klik kanan gambar di atas untuk terus simpan atau screenshot.")
-
-                    st.markdown(gold_top10_card(top10), unsafe_allow_html=True)
-
-                    top10_line = ", ".join(top10_numbers)
-                    share_text = (
-                        f"🔮 {date_label} Breakcode Base Draw!!!!\n"
-                        f"🕹 Belian bebas ikut anda ibox/tegak dimana\u00b2 rumah (Recommended GD Lotto)\n\n"
-                        f"Result : {card_result_handle}\n"
-                        f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n\n"
-                        f"🏆 Kombinasi Utama : {kombinasi_utama}\n\n"
-                        f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n"
-                        f"🎯 Top 10 Set\n"
-                        f"{top10_line}\n"
-                        f"-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"
-                    )
-
-                    divider()
-                    st.markdown("**📋 Teks Salin (untuk Telegram)** — guna ikon salin di kad di bawah:")
-                    st.code(share_text, language="text")
-                    st.download_button(
-                        "💾 Muat Turun Teks (.txt)",
-                        data=share_text.encode(),
-                        file_name=f"base_{date_label.replace('/', '-')}.txt",
-                        mime="text/plain",
-                        key="dl_base_card",
-                    )
-            else:
-                st.info("ℹ️ Tidak dapat jana base dengan tetapan semasa.")
-
-            # ---- 6. Analisis Lanjutan (Backtest, Chi-Square, Ensemble) ----
-            with st.expander("🔬 Analisis Lanjutan — Backtest, Chi-Square, Ensemble"):
-                st.caption(
-                    "Tool utk faham sejauh mana Formula Break ni benar-benar ada *edge* berbanding rawak, "
-                    "guna N &amp; Julat rank yang sama macam tetapan di atas."
-                )
-
-                st.markdown("**🔁 Backtest — uji prestasi sebenar**")
-                bt_mode = st.radio(
-                    "Kaedah:", ["Base Tunggal", "Base Gabungan (2 Base)"], horizontal=True, key="bt_mode"
-                )
-                bt_rounds = st.slider("Bilangan draw lepas untuk diuji:", 5, 50, 10, 5, key="bt_rounds")
-                if st.button("🚀 Jalankan Backtest", key="bt_run"):
-                    is_combined = bt_mode != "Base Tunggal"
-                    if not is_combined:
-                        bt_records, bt_full, bt_rate = backtest_break(draws_asof, recent_n, bt_rounds, rank_range)
-                    else:
-                        bt_records, bt_full, bt_rate = backtest_combined(draws_asof, recent_n, bt_rounds, rank_range)
-                    if bt_records:
-                        bt_baseline = backtest_random_baseline(draws_asof, recent_n, bt_rounds, rank_range, is_combined)
-                        bcol1, bcol2 = st.columns(2)
-                        with bcol1:
-                            st.success(f"🧮 Formula Break: {bt_full} / {len(bt_records)} draw → **{bt_rate}%**")
-                        with bcol2:
-                            st.info(
-                                f"🎲 Baseline Rawak (jangkaan): {bt_baseline['expected_full_match']} / "
-                                f"{bt_baseline['evaluated']} draw → **{bt_baseline['baseline_rate']}%**"
+                    rounds = st.slider("Bilangan draw lepas untuk diuji:", 5, 50, 10, 5, key="bt_rounds")
+                    if st.button("🚀 Jalankan Backtest", key="bt_run"):
+                        is_combined = bt_mode != "Base Tunggal"
+                        if not is_combined:
+                            records, full_match, hit_rate = backtest_break(
+                                draws, recent_n=recent_n, rounds=rounds, rank_range=rank_range
                             )
-                        if bt_rate > bt_baseline["baseline_rate"]:
-                            st.caption("✅ Formula Break mengatasi jangkaan rawak murni — petunjuk mungkin ada corak (bukan bukti muktamad).")
                         else:
-                            st.caption("⚠️ TIDAK mengatasi (atau setara sahaja dgn) jangkaan rawak murni — anggap keputusan sbg sekadar nasib buat masa ini.")
-                        st.dataframe(pd.DataFrame(bt_records), use_container_width=True, hide_index=True)
-                    else:
-                        st.warning("Data tidak mencukupi untuk backtest dengan tetapan ini.")
-
-                divider()
-                st.markdown("**🔍 Cari N Terbaik (julat rank dikekalkan ikut tetapan atas)**")
-                n_all_options2 = sorted({
-                    n for n in [30, 50, 70, 100, 150, 200, 300, 500, 750, 1000, 1500, 2000, 3000]
-                    if n <= len(draws_asof)
-                })
-                n_default2 = [n for n in [30, 50, 100, 200, 500] if n in n_all_options2] or n_all_options2[:5]
-                n_candidates_sel = st.multiselect(
-                    "Saiz N untuk dibandingkan:", options=n_all_options2, default=n_default2, key="n_search_candidates",
-                )
-                ncol1, ncol2 = st.columns(2)
-                n_search_rounds = ncol1.slider("Bilangan draw lepas untuk diuji:", 10, 100, 30, 5, key="n_search_rounds")
-                n_search_combined = ncol2.checkbox("Guna Base Gabungan (bukan tunggal)", key="n_search_combined")
-
-                if len(n_candidates_sel) < 2:
-                    st.info("Pilih sekurang-kurangnya 2 saiz N untuk perbandingan.")
-                elif st.button("🚀 Cari N Terbaik", key="n_search_run"):
-                    try:
-                        with st.spinner("Menguji setiap saiz N..."):
-                            n_results = recommend_recent_n(
-                                draws_asof, n_candidates_sel, rounds=n_search_rounds,
-                                rank_range=rank_range, combined=n_search_combined,
+                            records, full_match, hit_rate = backtest_combined(
+                                draws, recent_n=recent_n, rounds=rounds, rank_range=rank_range
                             )
-                        best_n = n_results[0]
-                        st.success(
-                            f"🏆 **N={best_n['N (recent_n)']}** paling baik — {best_n['Match Penuh (4/4)']} match "
-                            f"penuh drpd {best_n['Draw Diuji']} draw diuji (**{best_n['Hit Rate (%)']}%**)."
-                        )
-                        st.dataframe(pd.DataFrame(n_results), use_container_width=True, hide_index=True)
-                        if st.button(f"✅ Guna N={best_n['N (recent_n)']} Sekarang", key="n_search_apply"):
-                            st.session_state["base_n"] = min(best_n["N (recent_n)"], len(draws_asof))
-                            st.rerun()
-                    except ValueError as e:
-                        st.error(str(e))
+                        if records:
+                            baseline = backtest_random_baseline(
+                                draws, recent_n=recent_n, rounds=rounds, rank_range=rank_range, combined=is_combined
+                            )
+                            bcol1, bcol2 = st.columns(2)
+                            with bcol1:
+                                st.success(
+                                    f"🧮 Formula Break: {full_match} / {len(records)} draw  →  **{hit_rate}%**"
+                                )
+                            with bcol2:
+                                st.info(
+                                    f"🎲 Baseline Rawak (jangkaan): {baseline['expected_full_match']} / "
+                                    f"{baseline['evaluated']} draw  →  **{baseline['baseline_rate']}%**"
+                                )
+                            if hit_rate > baseline["baseline_rate"]:
+                                st.caption(
+                                    "✅ Formula Break mengatasi jangkaan rawak murni untuk tetapan ini — "
+                                    "petunjuk mungkin ada corak (bukan bukti muktamad)."
+                                )
+                            else:
+                                st.caption(
+                                    "⚠️ Formula Break TIDAK mengatasi (atau setara sahaja dgn) jangkaan rawak murni "
+                                    "untuk tetapan ini — anggap keputusan sbg sekadar nasib buat masa ini."
+                                )
+                            st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
+                        else:
+                            st.warning("Data tidak mencukupi untuk backtest dengan tetapan ini.")
 
-                divider()
-                st.markdown("**📐 Ujian Statistik — Chi-Square (taburan digit)**")
-                st.caption(
-                    "p < 0.05 = mungkin ada corak; p ≥ 0.05 = taburan digit nampak macam rawak untuk N draw ini."
-                )
-                try:
-                    chi_results = chi_square_uniformity(draws_asof, recent_n=recent_n)
-                    st.dataframe(pd.DataFrame(chi_results), use_container_width=True, hide_index=True)
-                    n_sig = sum(1 for r in chi_results if r["Signifikan (p<0.05)"].startswith("Ya"))
-                    if n_sig == 0:
-                        st.caption("⚠️ Tiada posisi menunjukkan penyimpangan signifikan drpd rawak.")
-                    else:
-                        st.caption(f"ℹ️ {n_sig} drpd 4 posisi menunjukkan penyimpangan signifikan (p<0.05).")
-                except ValueError as e:
-                    st.error(str(e))
+                with st.expander("🔍 Cari N (Jumlah Draw Terkini) Terbaik"):
+                    st.caption(
+                        "Data anda mungkin dah terkumpul banyak (cth: 2000+ draw) tapi default cuma guna "
+                        "N=50 draw terkini. Function ni cuba beberapa saiz N secara automatik & backtest "
+                        "SEBENAR (keputusan draw yang betul-betul keluar) — tak payah cuba satu-satu. "
+                        "Julat rank (P1–P4) dikekalkan ikut tetapan semasa di atas — ni fokus kesan N sahaja."
+                    )
+                    n_all_options = sorted({
+                        n for n in [30, 50, 70, 100, 150, 200, 300, 500, 750, 1000, 1500, 2000, 3000]
+                        if n <= len(draws)
+                    })
+                    n_default = [n for n in [30, 50, 100, 200, 500] if n in n_all_options] or n_all_options[:5]
+                    n_candidates_sel = st.multiselect(
+                        "Saiz N untuk dibandingkan:", options=n_all_options, default=n_default, key="n_search_candidates",
+                    )
+                    ncol1, ncol2 = st.columns(2)
+                    n_search_rounds = ncol1.slider(
+                        "Bilangan draw lepas untuk diuji:", 10, 100, 30, 5, key="n_search_rounds"
+                    )
+                    n_search_combined = ncol2.checkbox(
+                        "Guna Base Gabungan (bukan tunggal)", key="n_search_combined"
+                    )
 
-                divider()
-                st.markdown("**🧬 Ensemble — Digit Stabil Merentasi Beberapa N**")
-                ens_options = sorted({n for n in [20, 30, 50, 100, 150, 200] if n <= len(draws_asof)})
-                chosen_n = st.multiselect(
-                    "Saiz N untuk dibandingkan:", options=ens_options,
-                    default=[n for n in [30, 50, 100] if n in ens_options], key="ens_n_values",
-                )
-                if len(chosen_n) < 2:
-                    st.info("Pilih sekurang-kurangnya 2 saiz N untuk perbandingan.")
-                else:
+                    if len(n_candidates_sel) < 2:
+                        st.info("Pilih sekurang-kurangnya 2 saiz N untuk perbandingan.")
+                    elif st.button("🚀 Cari N Terbaik", key="n_search_run"):
+                        try:
+                            with st.spinner("Menguji setiap saiz N..."):
+                                n_results = recommend_recent_n(
+                                    draws, n_candidates_sel, rounds=n_search_rounds,
+                                    rank_range=rank_range, combined=n_search_combined,
+                                )
+                            best_n = n_results[0]
+                            st.success(
+                                f"🏆 **N={best_n['N (recent_n)']}** paling baik prestasi sebenarnya — "
+                                f"{best_n['Match Penuh (4/4)']} match penuh drpd {best_n['Draw Diuji']} draw "
+                                f"diuji (**{best_n['Hit Rate (%)']}%**), berbanding baseline rawak "
+                                f"{best_n['Baseline Rawak (%)']}%."
+                            )
+                            st.dataframe(pd.DataFrame(n_results), use_container_width=True, hide_index=True)
+                            if st.button(f"✅ Guna N={best_n['N (recent_n)']} Sekarang", key="n_search_apply"):
+                                st.session_state["break_n"] = min(best_n["N (recent_n)"], len(draws))
+                                st.rerun()
+                            st.caption(
+                                "⚠️ Berdasarkan backtest retrospektif sahaja — bukan jaminan keputusan akan datang. "
+                                "N besar guna lebih banyak sejarah (lebih stabil tapi mungkin kurang responsif "
+                                "kpd corak terkini); N kecil sebaliknya."
+                            )
+                        except ValueError as e:
+                            st.error(str(e))
+
+                with st.expander("📐 Ujian Statistik — Chi-Square (taburan digit)"):
+                    st.caption(
+                        "Uji sama ada taburan digit 0–9 tiap posisi (P1–P4) menyimpang secara signifikan drpd "
+                        "taburan seragam (rawak sepenuhnya). p < 0.05 = mungkin ada corak; p ≥ 0.05 = nampak macam rawak."
+                    )
                     try:
-                        ens_results = ensemble_stable_digits(draws_asof, n_values=chosen_n, rank_range=rank_range)
-                        st.dataframe(pd.DataFrame(ens_results), use_container_width=True, hide_index=True)
+                        chi_results = chi_square_uniformity(draws, recent_n=recent_n)
+                        st.dataframe(pd.DataFrame(chi_results), use_container_width=True, hide_index=True)
+                        n_sig = sum(1 for r in chi_results if r["Signifikan (p<0.05)"].startswith("Ya"))
+                        if n_sig == 0:
+                            st.caption(
+                                "⚠️ Tiada posisi menunjukkan penyimpangan signifikan drpd rawak — taburan digit "
+                                "sepanjang N draw ini secara statistik nampak seragam/rawak."
+                            )
+                        else:
+                            st.caption(f"ℹ️ {n_sig} drpd 4 posisi menunjukkan penyimpangan signifikan (p<0.05).")
                     except ValueError as e:
                         st.error(str(e))
+
+                with st.expander("🧬 Ensemble — Digit Stabil Merentasi Beberapa N"):
+                    st.caption(
+                        "Digit yang KEKAL dlm julat rank yang sama merentasi beberapa saiz tetingkap N — "
+                        "kurang berkemungkinan cuma nois drpd satu saiz sampel yang dipilih secara sembarangan."
+                    )
+                    n_options = sorted({n for n in [20, 30, 50, 100, 150, 200] if n <= len(draws)})
+                    chosen_n = st.multiselect(
+                        "Saiz N untuk dibandingkan:", options=n_options,
+                        default=[n for n in [30, 50, 100] if n in n_options], key="ens_n_values",
+                    )
+                    if len(chosen_n) < 2:
+                        st.info("Pilih sekurang-kurangnya 2 saiz N untuk perbandingan.")
+                    else:
+                        try:
+                            ens_results = ensemble_stable_digits(draws, n_values=chosen_n, rank_range=rank_range)
+                            st.dataframe(pd.DataFrame(ens_results), use_container_width=True, hide_index=True)
+                        except ValueError as e:
+                            st.error(str(e))
+            except ValueError as e:
+                st.error(str(e))
 
 # =================================================================== HISTORY ===
 with tab_history:
     section_title(
-        "🔎", "Semak Nombor — Sejarah &amp; Cadangan Julat",
-        "Beza dgn tab <strong>🔮 Base</strong> (cadangan julat SECARA UMUM): kat sini awak masukkan "
-        "SATU nombor sasaran (P1–P4) yg awak dah ada dlm fikiran, dan semak bila/sejauh mana nombor "
-        "tu pernah muncul dlm base sepanjang sejarah.",
+        "🕘", "History — Semak Corak Digit",
+        "Semak sepanjang sejarah draw: pada tarikh mana base (P1–P4) pernah ada digit sasaran anda.",
     )
 
     if len(draws) < 20:
