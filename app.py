@@ -1633,6 +1633,27 @@ with tab_wheel:
                             else:
                                 st.caption(f"⚠️ TIDAK mengatasi (atau setara/lebih rendah drpd) baseline rawak ({wbt_summary['kelebihan_vs_rawak']} mata peratusan) — anggap Top-N ni sekadar nasib buat masa ini, bukan formula skor yang \"lebih pandai\".")
                             st.dataframe(pd.DataFrame(wbt_records), use_container_width=True, hide_index=True)
+
+                            passed_nums = [
+                                r["Nombor"] for r in wbt_records
+                                if r[f"Masuk Top {wbt_top_n}"] == "✅"
+                            ]
+                            divider()
+                            if passed_nums:
+                                st.markdown(
+                                    f"**📋 Nombor Lulus Backtest (pernah masuk Top {wbt_top_n}) — {len(passed_nums)} nombor:**"
+                                )
+                                passed_text = "\n".join(f"{n}#####{lot}" for n in passed_nums)
+                                st.code(", ".join(passed_nums), language="text")
+                                st.download_button(
+                                    f"💾 Muat Turun Nombor Lulus (format lot)",
+                                    data=passed_text.encode(),
+                                    file_name=f"wheelpick_backtest_lulus_top{wbt_top_n}.txt",
+                                    mime="text/plain",
+                                    key="dl_backtest_lulus",
+                                )
+                            else:
+                                st.caption(f"ℹ️ Tiada nombor yang lulus (masuk Top {wbt_top_n}) dalam julat draw yang diuji.")
             else:
                 st.info("ℹ️ Tiada kombinasi selepas tapis untuk jana Top 10.")
     else:
