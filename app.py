@@ -41,7 +41,13 @@ from core.formula_break import (
     scan_digit_history,
 )
 from core.predictions_log import log_prediction, prediction_summary, reconcile_predictions
-from core.wheelpick import filter_wheel_combos, generate_wheel_combos, get_like_dislike_digits, rank_combos
+from core.wheelpick import (
+    backtest_wheelpick_topn,
+    filter_wheel_combos,
+    generate_wheel_combos,
+    get_like_dislike_digits,
+    rank_combos,
+)
 
 st.set_page_config(page_title="Breakcode4D — Formula Break", page_icon="🔮", layout="wide")
 
@@ -1524,10 +1530,8 @@ with tab_wheel:
             st.success(f"✅ Selepas tapis: **{len(filtered)}** kombinasi")
 
             plain_filtered = [c.split("#####")[0] for c in filtered]
-            for i in range(0, len(plain_filtered), 10):
-                part = plain_filtered[i : i + 10]
-                st.markdown(f"**Set {i // 10 + 1}:**")
-                st.code(", ".join(part), language="text")
+            st.markdown("**📋 Senarai Kombinasi (selepas tapis):**")
+            st.code(", ".join(plain_filtered), language="text")
 
             if filtered:
                 st.download_button(
@@ -1575,6 +1579,60 @@ with tab_wheel:
                     mime="text/plain",
                     key="dl_top10",
                 )
+
+                divider()
+                with st.expander("🔬 Backtest Top-N — adakah skor ni memang ada *edge*?"):
+                    st.caption(
+                        "Uji Top-N ni terhadap draw LEPAS (base + kombinasi dijana semula setiap kali, "
+                        "\"as of\" — tiada bocor maklumat masa depan). Bagi setiap draw yang base-nya "
+                        "match penuh, semak sama ada nombor sebenar tersenarai dalam Top-N, lalu banding "
+                        "dengan baseline rawak tulen (Top-N ÷ saiz kolam)."
+                    )
+                    wbc1, wbc2, wbc3 = st.columns(3)
+                    wbt_base_n = wbc1.slider(
+                        "N base untuk diuji:", 20, len(draws), min(500, len(draws)), 10, key="wbt_base_n",
+                    )
+                    wbt_rank_range = wbc2.select_slider(
+                        "Julat rank digit:", options=list(range(1, 11)), value=DEFAULT_RANK_RANGE, key="wbt_rank_range",
+                    )
+                    wbt_top_n = wbc3.selectbox(
+                        "Top-N untuk diuji:", [10, 20, 30, 50, 100, 150, 200],
+                        index=[10, 20, 30, 50, 100, 150, 200].index(top_n_choice)
+                        if top_n_choice in [10, 20, 30, 50, 100, 150, 200] else 4,
+                        key="wbt_top_n",
+                    )
+                    wbt_rounds = st.slider(
+                        "Bilangan draw lepas untuk diuji:", 20, min(500, len(draws)), 200, 10, key="wbt_rounds",
+                    )
+                    if st.button("🚀 Jalankan Backtest Top-N", key="wbt_run"):
+                        with st.spinner("Menguji draw lepas satu-satu..."):
+                            wbt_records, wbt_summary = backtest_wheelpick_topn(
+                                draws,
+                                base_recent_n=wbt_base_n,
+                                rank_range=wbt_rank_range,
+                                score_recent_n=score_n,
+                                top_n=wbt_top_n,
+                                rounds=wbt_rounds,
+                                no_repeat=no_repeat, no_triple=no_triple, no_pair=no_pair,
+                                no_ascend=no_ascend, use_history=use_history, sim_limit=sim_limit,
+                                likes=likes, dislikes=dislikes,
+                            )
+                        if wbt_summary["base_penuh"] == 0:
+                            st.warning("⚠️ Tiada draw dalam julat diuji yang base-nya match penuh — cuba tambah bilangan draw diuji.")
+                        else:
+                            wcol1, wcol2 = st.columns(2)
+                            with wcol1:
+                                st.success(
+                                    f"🧮 Recall Top-{wbt_top_n} sebenar: {wbt_summary['masuk_top_n']} / "
+                                    f"{wbt_summary['base_penuh']} draw (base penuh) → **{wbt_summary['recall_rate']}%**"
+                                )
+                            with wcol2:
+                                st.info(f"🎲 Baseline rawak tulen: **{wbt_summary['baseline_rawak']}%**")
+                            if wbt_summary["kelebihan_vs_rawak"] > 0:
+                                st.caption(f"✅ Mengatasi baseline rawak sebanyak {wbt_summary['kelebihan_vs_rawak']} mata peratusan — petunjuk mungkin ada corak (bukan bukti muktamad).")
+                            else:
+                                st.caption(f"⚠️ TIDAK mengatasi (atau setara/lebih rendah drpd) baseline rawak ({wbt_summary['kelebihan_vs_rawak']} mata peratusan) — anggap Top-N ni sekadar nasib buat masa ini, bukan formula skor yang \"lebih pandai\".")
+                            st.dataframe(pd.DataFrame(wbt_records), use_container_width=True, hide_index=True)
             else:
                 st.info("ℹ️ Tiada kombinasi selepas tapis untuk jana Top 10.")
     else:
