@@ -8,6 +8,8 @@ base 4-posisi (biasanya hasil Formula Break) mengikut pelbagai kriteria.
 import itertools
 from collections import Counter
 
+from core.formula_break import check_against_base, generate_break_base
+
 
 def get_like_dislike_digits(draws: list[dict], recent_n: int = 30) -> tuple[list[str], list[str]]:
     """
@@ -119,6 +121,100 @@ def rank_combos(
         {"Rank": i + 1, "Nombor": num, "Lot": lot, "Skor": score}
         for i, (num, lot, score) in enumerate(scored[:top_n])
     ]
+
+
+def backtest_wheelpick_topn(
+    draws: list[dict],
+    base_recent_n: int = 500,
+    rank_range: tuple[int, int] = (4, 8),
+    score_recent_n: int = 50,
+    top_n: int = 100,
+    rounds: int = 200,
+    no_repeat: bool = False,
+    no_triple: bool = False,
+    no_pair: bool = False,
+    no_ascend: bool = False,
+    use_history: bool = False,
+    sim_limit: int = 4,
+    likes: list[str] | None = None,
+    dislikes: list[str] | None = None,
+) -> tuple[list[dict], dict]:
+    """
+    Backtest EMPIRIKAL untuk Wheelpick + Top-N (rank_combos): bagi setiap
+    draw yang diuji, base DAN senarai kombinasi dijana HANYA drpd draw
+    SEBELUM draw tersebut (kaedah "as of" — sama prinsip backtest_break
+    dalam formula_break.py), supaya tiada maklumat masa depan bocor.
+
+    Bagi draw yang base-nya match penuh (4/4 wujud dlm base — syarat
+    perlu sebelum Top-N pun berpeluang tangkap nombor tu), semak sama
+    ada nombor SEBENAR muncul dlm Top-N hasil rank_combos(). Turut kira
+    baseline "rawak tulen" (top_n / saiz kolam SELEPAS tapis, bagi
+    setiap draw) sebagai perbandingan adil — kalau recall sebenar
+    hampir sama dgn baseline ni, formula skor semasa (atau apa-apa
+    formula lain yg diuji dgn cara sama) tiada kelebihan sebenar
+    berbanding cuma teka rawak dari kolam yang sama.
+
+    Pulangkan (records, ringkasan):
+      records   -- senarai per-draw (utk papar dlm jadual)
+      ringkasan -- dict statistik keseluruhan
+    """
+    records = []
+    base_full = 0
+    hits = 0
+    baseline_probs = []
+
+    for i in range(1, rounds + 1):
+        test_draw = draws[-i]
+        past = draws[:-i]
+        if len(past) < base_recent_n:
+            break
+        try:
+            base = generate_break_base(past, base_recent_n, rank_range)
+        except ValueError:
+            continue
+
+        actual = f"{int(test_draw['number']):04d}"
+        is_base_full = all(check_against_base(actual, base))
+
+        combos = generate_wheel_combos(base)
+        filtered = filter_wheel_combos(
+            combos, past, no_repeat, no_triple, no_pair, no_ascend,
+            use_history, sim_limit, likes, dislikes,
+        )
+        if not filtered:
+            continue
+
+        top_results = rank_combos(filtered, past, recent_n=score_recent_n, top_n=top_n)
+        in_top = actual in {r["Nombor"] for r in top_results}
+
+        records.append({
+            "Tarikh": test_draw["date"],
+            "Nombor": test_draw["number"],
+            "Base Penuh": "🎯 Ya" if is_base_full else "—",
+            f"Masuk Top {top_n}": "✅" if in_top else ("—" if not is_base_full else "❌"),
+            "Saiz Kolam": len(filtered),
+        })
+
+        if is_base_full:
+            base_full += 1
+            baseline_probs.append(min(top_n, len(filtered)) / len(filtered))
+            if in_top:
+                hits += 1
+
+    records.reverse()
+
+    recall_rate = round(hits / base_full * 100, 2) if base_full else 0.0
+    baseline_rate = round(sum(baseline_probs) / len(baseline_probs) * 100, 2) if baseline_probs else 0.0
+
+    ringkasan = {
+        "draw_diuji": len(records),
+        "base_penuh": base_full,
+        "masuk_top_n": hits,
+        "recall_rate": recall_rate,
+        "baseline_rawak": baseline_rate,
+        "kelebihan_vs_rawak": round(recall_rate - baseline_rate, 2),
+    }
+    return records, ringkasan
 
 
 def pick_from_base(base: list[list[str]], index: int, arah: str = "kiri") -> str:
