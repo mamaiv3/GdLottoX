@@ -87,6 +87,99 @@ def filter_wheel_combos(
     return out
 
 
+def score_combos_by_style(
+    combos: list[str],
+    draws: list[dict],
+    recent_n: int = 50,
+    style: str = "sum",
+    gap_window: int = 200,
+) -> list[dict]:
+    """
+    Skor SEMUA kombinasi ("NNNN#####lot") ikut gaya skor pilihan.
+    (rank_combos() asal kekal guna gaya "sum" & TAK disentuh — fungsi ni
+    berasingan sepenuhnya, sekadar pilihan tambahan untuk dibandingkan.)
+
+    style:
+      "sum"       -- (sama seperti rank_combos asal) jumlah terus
+                     kekerapan digit gabungan 4 posisi dlm `recent_n`
+                     draw terkini.
+      "geometric" -- min. geometrik (P1×P2×P3×P4)^0.25 -- penalti kuat
+                     kalau ADA satu posisi lemah walaupun 3 posisi lain
+                     panas (elak skor tinggi "palsu" drpd 1 posisi dominan).
+      "voting"    -- kira berapa (0-4) posisi combo tu ada digit dlm
+                     TOP-3 paling kerap utk posisi tersebut. Lebih mudah
+                     difahami macam manusia ("3 drpd 4 digit panas").
+                     Sekiranya seri, guna skor "sum" sbg tie-break.
+      "overdue"   -- jumlah "gap" (bilangan draw sejak digit tu last
+                     muncul kat posisi tersebut) merentas `gap_window`
+                     draw terkini -- digit lama tak keluar dpt markah
+                     lagi tinggi ("due utk keluar").
+
+    Pulangkan SEMUA kombinasi (bukan cuma top_n) sbg list of dict
+    {"Nombor", "Lot", "Skor"}, disusun MENURUN ikut skor — slice
+    [:top_n] sendiri ikut keperluan.
+    """
+    if style not in ("sum", "geometric", "voting", "overdue"):
+        raise ValueError("style mesti salah satu drpd: sum, geometric, voting, overdue")
+
+    recent = draws[-recent_n:] if draws else []
+    counters = [Counter() for _ in range(4)]
+    for d in recent:
+        num = f"{int(d['number']):04d}"
+        for i in range(4):
+            counters[i][num[i]] += 1
+
+    top3 = None
+    gaps = None
+    if style == "voting":
+        top3 = [{digit for digit, _ in counters[i].most_common(3)} for i in range(4)]
+    elif style == "overdue":
+        gaps = _compute_position_gaps(draws, gap_window)
+
+    scored = []
+    for entry in combos:
+        num, lot = entry.split("#####")
+        if style == "sum":
+            s = sum(counters[i][num[i]] for i in range(4))
+            sort_key, display = s, s
+        elif style == "geometric":
+            vals = [counters[i][num[i]] + 1 for i in range(4)]
+            s = (vals[0] * vals[1] * vals[2] * vals[3]) ** 0.25
+            sort_key, display = s, round(s, 2)
+        elif style == "voting":
+            votes = sum(1 for i in range(4) if num[i] in top3[i])
+            tiebreak = sum(counters[i][num[i]] for i in range(4))
+            sort_key, display = (votes, tiebreak), votes
+        else:  # overdue
+            s = sum(gaps[i][num[i]] for i in range(4))
+            sort_key, display = s, s
+        scored.append((num, lot, sort_key, display))
+
+    scored.sort(key=lambda x: x[2], reverse=True)
+    return [{"Nombor": num, "Lot": lot, "Skor": display} for num, lot, _, display in scored]
+
+
+def _compute_position_gaps(draws: list[dict], gap_window: int) -> list[dict]:
+    """Bagi setiap posisi (0-3), kira bilangan draw sejak setiap digit (0-9)
+    last muncul, dlm `gap_window` draw terkini. Digit langsung tak muncul
+    dlm tetingkap tu diberi gap maksimum (= panjang tetingkap)."""
+    window = draws[-gap_window:] if draws else []
+    L = len(window)
+    gaps = [dict() for _ in range(4)]
+    for i in range(4):
+        seen = set()
+        for offset, d in enumerate(reversed(window)):
+            num = f"{int(d['number']):04d}"
+            digit = num[i]
+            if digit not in seen:
+                gaps[i][digit] = offset
+                seen.add(digit)
+        for digit in "0123456789":
+            if digit not in gaps[i]:
+                gaps[i][digit] = L
+    return gaps
+
+
 def rank_combos(
     combos: list[str],
     draws: list[dict],
@@ -130,6 +223,8 @@ def backtest_wheelpick_topn(
     score_recent_n: int = 50,
     top_n: int = 100,
     rounds: int = 200,
+    style: str = "sum",
+    gap_window: int = 200,
     no_repeat: bool = False,
     no_triple: bool = False,
     no_pair: bool = False,
@@ -140,19 +235,20 @@ def backtest_wheelpick_topn(
     dislikes: list[str] | None = None,
 ) -> tuple[list[dict], dict]:
     """
-    Backtest EMPIRIKAL untuk Wheelpick + Top-N (rank_combos): bagi setiap
-    draw yang diuji, base DAN senarai kombinasi dijana HANYA drpd draw
-    SEBELUM draw tersebut (kaedah "as of" — sama prinsip backtest_break
-    dalam formula_break.py), supaya tiada maklumat masa depan bocor.
+    Backtest EMPIRIKAL untuk Wheelpick + Top-N: bagi setiap draw yang
+    diuji, base DAN senarai kombinasi dijana HANYA drpd draw SEBELUM
+    draw tersebut (kaedah "as of" — sama prinsip backtest_break dalam
+    formula_break.py), supaya tiada maklumat masa depan bocor.
 
     Bagi draw yang base-nya match penuh (4/4 wujud dlm base — syarat
     perlu sebelum Top-N pun berpeluang tangkap nombor tu), semak sama
-    ada nombor SEBENAR muncul dlm Top-N hasil rank_combos(). Turut kira
-    baseline "rawak tulen" (top_n / saiz kolam SELEPAS tapis, bagi
-    setiap draw) sebagai perbandingan adil — kalau recall sebenar
-    hampir sama dgn baseline ni, formula skor semasa (atau apa-apa
-    formula lain yg diuji dgn cara sama) tiada kelebihan sebenar
-    berbanding cuma teka rawak dari kolam yang sama.
+    ada nombor SEBENAR muncul dlm Top-N hasil `score_combos_by_style()`
+    (gaya skor ikut parameter `style` — default "sum" = sama spt
+    rank_combos() asal). Turut kira baseline "rawak tulen" (top_n /
+    saiz kolam SELEPAS tapis, bagi setiap draw) sebagai perbandingan
+    adil — kalau recall sebenar hampir sama dgn baseline ni, gaya skor
+    yg diuji tiada kelebihan sebenar berbanding cuma teka rawak dari
+    kolam yang sama.
 
     Pulangkan (records, ringkasan):
       records   -- senarai per-draw (utk papar dlm jadual)
@@ -184,7 +280,10 @@ def backtest_wheelpick_topn(
         if not filtered:
             continue
 
-        top_results = rank_combos(filtered, past, recent_n=score_recent_n, top_n=top_n)
+        scored_all = score_combos_by_style(
+            filtered, past, recent_n=score_recent_n, style=style, gap_window=gap_window,
+        )
+        top_results = scored_all[:top_n]
         in_top = actual in {r["Nombor"] for r in top_results}
 
         records.append({
@@ -215,6 +314,132 @@ def backtest_wheelpick_topn(
         "kelebihan_vs_rawak": round(recall_rate - baseline_rate, 2),
     }
     return records, ringkasan
+
+
+def recommend_top_n(
+    draws: list[dict],
+    top_n_candidates: list[int],
+    base_recent_n: int = 500,
+    rank_range: tuple[int, int] = (4, 8),
+    score_recent_n: int = 50,
+    rounds: int = 200,
+    style: str = "sum",
+    gap_window: int = 200,
+    no_repeat: bool = False,
+    no_triple: bool = False,
+    no_pair: bool = False,
+    no_ascend: bool = False,
+    use_history: bool = False,
+    sim_limit: int = 4,
+    likes: list[str] | None = None,
+    dislikes: list[str] | None = None,
+) -> list[dict]:
+    """
+    Cadangan Top-N: bagi SETIAP top_n calon, jalankan backtest_wheelpick_topn
+    (base, kolam & kaedah "as of" SAMA setiap kali — cuma Top-N yang berbeza),
+    lalu banding recall sebenar vs baseline rawak tulen bagi Top-N tersebut.
+
+    PENTING: recall MENTAH secara semula jadi naik bila Top-N makin besar
+    (kolam yang diambil lagi besar = peluang lagi tinggi — bukan sebab
+    "skor lebih pandai"). Sebab itu keputusan disusun ikut KELEBIHAN
+    berbanding rawak (recall − baseline), BUKAN ikut recall mentah —
+    supaya cadangan menunjukkan Top-N mana yang benar-benar dpt nilai
+    tambah drpd formula skor, bukan sekadar Top-N yang paling besar.
+    """
+    results = []
+    for n in sorted(set(top_n_candidates)):
+        if n < 1:
+            continue
+        _, summary = backtest_wheelpick_topn(
+            draws,
+            base_recent_n=base_recent_n,
+            rank_range=rank_range,
+            score_recent_n=score_recent_n,
+            top_n=n,
+            rounds=rounds,
+            style=style,
+            gap_window=gap_window,
+            no_repeat=no_repeat, no_triple=no_triple, no_pair=no_pair,
+            no_ascend=no_ascend, use_history=use_history, sim_limit=sim_limit,
+            likes=likes, dislikes=dislikes,
+        )
+        if summary["base_penuh"] == 0:
+            continue
+        results.append({
+            "Top-N": n,
+            "Base Penuh": summary["base_penuh"],
+            "Masuk Top-N": summary["masuk_top_n"],
+            "Recall (%)": summary["recall_rate"],
+            "Baseline Rawak (%)": summary["baseline_rawak"],
+            "Kelebihan vs Rawak": summary["kelebihan_vs_rawak"],
+        })
+
+    if not results:
+        raise ValueError("Tiada Top-N berjaya diuji — cuba kurangkan rounds atau base_recent_n.")
+
+    results.sort(key=lambda r: r["Kelebihan vs Rawak"], reverse=True)
+    return results
+
+
+def compare_scoring_styles(
+    draws: list[dict],
+    styles: list[str] | None = None,
+    base_recent_n: int = 500,
+    rank_range: tuple[int, int] = (4, 8),
+    score_recent_n: int = 50,
+    top_n: int = 100,
+    rounds: int = 200,
+    gap_window: int = 200,
+    no_repeat: bool = False,
+    no_triple: bool = False,
+    no_pair: bool = False,
+    no_ascend: bool = False,
+    use_history: bool = False,
+    sim_limit: int = 4,
+    likes: list[str] | None = None,
+    dislikes: list[str] | None = None,
+) -> list[dict]:
+    """
+    Banding SEMUA gaya skor ("sum", "geometric", "voting", "overdue")
+    pada N base, julat rank, Top-N & tetapan tapis yang SAMA — guna
+    backtest_wheelpick_topn() bagi setiap gaya, susun ikut KELEBIHAN
+    vs rawak (bukan recall mentah) supaya nampak gaya mana yg betul²
+    ada nilai tambah, bukan sekadar kebetulan sampel kecil.
+    """
+    if styles is None:
+        styles = ["sum", "geometric", "voting", "overdue"]
+
+    results = []
+    for style in styles:
+        _, summary = backtest_wheelpick_topn(
+            draws,
+            base_recent_n=base_recent_n,
+            rank_range=rank_range,
+            score_recent_n=score_recent_n,
+            top_n=top_n,
+            rounds=rounds,
+            style=style,
+            gap_window=gap_window,
+            no_repeat=no_repeat, no_triple=no_triple, no_pair=no_pair,
+            no_ascend=no_ascend, use_history=use_history, sim_limit=sim_limit,
+            likes=likes, dislikes=dislikes,
+        )
+        if summary["base_penuh"] == 0:
+            continue
+        results.append({
+            "Gaya Skor": style,
+            "Base Penuh": summary["base_penuh"],
+            "Masuk Top-N": summary["masuk_top_n"],
+            "Recall (%)": summary["recall_rate"],
+            "Baseline Rawak (%)": summary["baseline_rawak"],
+            "Kelebihan vs Rawak": summary["kelebihan_vs_rawak"],
+        })
+
+    if not results:
+        raise ValueError("Tiada gaya skor berjaya diuji — cuba kurangkan rounds atau base_recent_n.")
+
+    results.sort(key=lambda r: r["Kelebihan vs Rawak"], reverse=True)
+    return results
 
 
 def pick_from_base(base: list[list[str]], index: int, arah: str = "kiri") -> str:
