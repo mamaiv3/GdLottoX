@@ -43,10 +43,12 @@ from core.formula_break import (
 from core.predictions_log import log_prediction, prediction_summary, reconcile_predictions
 from core.wheelpick import (
     backtest_wheelpick_topn,
+    compare_scoring_styles,
     filter_wheel_combos,
     generate_wheel_combos,
     get_like_dislike_digits,
     rank_combos,
+    score_combos_by_style,
 )
 
 st.set_page_config(page_title="Breakcode4D — Formula Break", page_icon="🔮", layout="wide")
@@ -1542,15 +1544,30 @@ with tab_wheel:
                 )
 
                 divider()
+                style_options = {
+                    "Sum (Asal — kekerapan digit)": "sum",
+                    "Geometric Mean (semua posisi kena \"okay\")": "geometric",
+                    "Voting (bilangan posisi top-3)": "voting",
+                    "Overdue (digit lama tak keluar)": "overdue",
+                }
+                style_label = st.selectbox(
+                    "Gaya skor Top-N:", list(style_options.keys()), index=0, key="wp_style",
+                )
+                score_style = style_options[style_label]
+
                 top_n_choice = st.selectbox(
                     "Pilih jumlah TOP:", [10, 20, 30, 50, 100, 150, 200],
                     index=0, key="wp_top_n",
                 )
                 section_title(
                     "🏆", f"Top {top_n_choice} Pilihan",
-                    f"Disusun ikut kekerapan sebenar digit P1–P4 dalam {score_n} draw terkini.",
+                    f"Disusun ikut gaya \"{style_label}\" — {score_n} draw terkini.",
                 )
-                top_results = rank_combos(filtered, draws, recent_n=score_n, top_n=top_n_choice)
+                if score_style == "sum":
+                    top_results = rank_combos(filtered, draws, recent_n=score_n, top_n=top_n_choice)
+                else:
+                    scored_all = score_combos_by_style(filtered, draws, recent_n=score_n, style=score_style)
+                    top_results = [{"Rank": i + 1, **r} for i, r in enumerate(scored_all[:top_n_choice])]
                 st.dataframe(pd.DataFrame(top_results), use_container_width=True, hide_index=True)
 
                 chunk_size = 10
@@ -1601,7 +1618,12 @@ with tab_wheel:
                         if top_n_choice in [10, 20, 30, 50, 100, 150, 200] else 4,
                         key="wbt_top_n",
                     )
-                    wbt_rounds = st.slider(
+                    wbc4, wbc5 = st.columns(2)
+                    wbt_style_label = wbc4.selectbox(
+                        "Gaya skor untuk diuji:", list(style_options.keys()), index=0, key="wbt_style",
+                    )
+                    wbt_style = style_options[wbt_style_label]
+                    wbt_rounds = wbc5.slider(
                         "Bilangan draw lepas untuk diuji:", 20, min(500, len(draws)), 200, 10, key="wbt_rounds",
                     )
                     if st.button("🚀 Jalankan Backtest Top-N", key="wbt_run"):
@@ -1613,6 +1635,7 @@ with tab_wheel:
                                 score_recent_n=score_n,
                                 top_n=wbt_top_n,
                                 rounds=wbt_rounds,
+                                style=wbt_style,
                                 no_repeat=no_repeat, no_triple=no_triple, no_pair=no_pair,
                                 no_ascend=no_ascend, use_history=use_history, sim_limit=sim_limit,
                                 likes=likes, dislikes=dislikes,
@@ -1654,6 +1677,41 @@ with tab_wheel:
                                 )
                             else:
                                 st.caption(f"ℹ️ Tiada nombor yang lulus (masuk Top {wbt_top_n}) dalam julat draw yang diuji.")
+
+                    divider()
+                    st.markdown("**⚖️ Banding SEMUA gaya skor sekali gus (N base, julat & Top-N sama):**")
+                    if st.button("📊 Banding Semua Gaya Skor", key="wbt_compare_run"):
+                        with st.spinner("Menguji 4 gaya skor terhadap draw lepas..."):
+                            try:
+                                cmp_results = compare_scoring_styles(
+                                    draws,
+                                    base_recent_n=wbt_base_n,
+                                    rank_range=wbt_rank_range,
+                                    score_recent_n=score_n,
+                                    top_n=wbt_top_n,
+                                    rounds=wbt_rounds,
+                                    no_repeat=no_repeat, no_triple=no_triple, no_pair=no_pair,
+                                    no_ascend=no_ascend, use_history=use_history, sim_limit=sim_limit,
+                                    likes=likes, dislikes=dislikes,
+                                )
+                            except ValueError as e:
+                                st.warning(f"⚠️ {e}")
+                            else:
+                                sample_n = cmp_results[0]["Base Penuh"]
+                                if sample_n < 30:
+                                    st.caption(
+                                        f"⚠️ Cuma {sample_n} sampel (base penuh) — naikkan \"Bilangan draw lepas untuk diuji\" "
+                                        "untuk keputusan yang lebih boleh dipercayai sebelum buat kesimpulan."
+                                    )
+                                st.dataframe(pd.DataFrame(cmp_results), use_container_width=True, hide_index=True)
+                                winner = cmp_results[0]
+                                if winner["Kelebihan vs Rawak"] > 0:
+                                    st.caption(
+                                        f"🏆 \"{winner['Gaya Skor']}\" terdepan (+{winner['Kelebihan vs Rawak']} drpd rawak) — "
+                                        "tapi anggap ni petunjuk awal, bukan bukti muktamad, terutama kalau sampel masih kecil."
+                                    )
+                                else:
+                                    st.caption("⚠️ Tiada satu gaya skor pun mengatasi baseline rawak dalam ujian ini.")
             else:
                 st.info("ℹ️ Tiada kombinasi selepas tapis untuk jana Top 10.")
     else:
