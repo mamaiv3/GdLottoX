@@ -1284,6 +1284,21 @@ with tab_base:
                     try:
                         ens_results = ensemble_stable_digits(draws_asof, n_values=chosen_n, rank_range=rank_range)
                         st.dataframe(pd.DataFrame(ens_results), use_container_width=True, hide_index=True)
+
+                        ens_base = [
+                            row["Digit Stabil (semua N)"].split(", ") if row["Digit Stabil (semua N)"] != "—" else []
+                            for row in ens_results
+                        ]
+                        empty_positions = [row["Posisi"] for row, digits in zip(ens_results, ens_base) if not digits]
+                        if empty_positions:
+                            st.warning(
+                                f"⚠️ Posisi {', '.join(empty_positions)} tiada digit stabil merentasi SEMUA N yang "
+                                "dipilih — base ni tak lengkap, tak boleh digunakan terus dalam Wheelpick. Cuba "
+                                "kurangkan bilangan N dipilih, atau kelonggarkan julat rank di atas."
+                            )
+                        else:
+                            st.markdown("**🔢 Base Ensemble (Digit Stabil Semua N) — boleh salin terus:**")
+                            st.code("\n".join(" ".join(p) for p in ens_base), language="text")
                     except ValueError as e:
                         st.error(str(e))
 
