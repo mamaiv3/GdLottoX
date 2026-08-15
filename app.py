@@ -44,6 +44,7 @@ from core.predictions_log import log_prediction, prediction_summary, reconcile_p
 from core.wheelpick import (
     backtest_wheelpick_topn,
     compare_scoring_styles,
+    filter_by_2d1d,
     filter_wheel_combos,
     generate_wheel_combos,
     get_like_dislike_digits,
@@ -1532,12 +1533,49 @@ with tab_wheel:
             use_history = fc3.checkbox("Buang pernah keluar", key="f5")
             sim_limit = st.slider("Max sama posisi dgn draw terakhir:", 0, 4, 2, key="f6")
 
+        with st.expander("🎯 Filter 2D/1D (Tikam Nombor)"):
+            st.caption(
+                "Beza dgn **Digit Like/Dislike** di atas (semak SATU digit sahaja): di sini boleh "
+                "masukkan nombor **2D** (cth `36`) — kombinasi 4D mesti ada **KEDUA-DUA** digit 3 "
+                "DAN 6 sekali (bukan cuma salah satu) utk dikira padan. Mod **1D** pula sama macam "
+                "biasa (satu digit sahaja tiap entri)."
+            )
+            f2d_mode = st.radio("Mod:", ["1D", "2D"], horizontal=True, key="wp_2d_mode")
+            digit_len = 1 if f2d_mode == "1D" else 2
+            contoh = "3 5 8" if digit_len == 1 else "36 58 92"
+
+            f2d_like_raw = st.text_input(
+                f"Like ({f2d_mode}) — nombor dipisah space, cth {contoh}:", key="wp_2d_like"
+            )
+            f2d_dislike_raw = st.text_input(
+                f"Dislike ({f2d_mode}) — nombor dipisah space:", key="wp_2d_dislike"
+            )
+
+            def _parse_2d1d(raw: str, dlen: int) -> tuple[list[str], list[str]]:
+                toks = raw.split()
+                valid = [t for t in toks if len(t) == dlen and t.isdigit()]
+                invalid = [t for t in toks if t not in valid]
+                return valid, invalid
+
+            likes_2d, invalid_like_2d = _parse_2d1d(f2d_like_raw, digit_len)
+            dislikes_2d, invalid_dislike_2d = _parse_2d1d(f2d_dislike_raw, digit_len)
+
+            if invalid_like_2d:
+                st.error(f"❌ Abaikan (bukan {digit_len} digit sah): {', '.join(invalid_like_2d)}")
+            if invalid_dislike_2d:
+                st.error(f"❌ Abaikan (bukan {digit_len} digit sah): {', '.join(invalid_dislike_2d)}")
+            if likes_2d:
+                st.caption(f"✅ Like {f2d_mode} aktif: {', '.join(likes_2d)}")
+            if dislikes_2d:
+                st.caption(f"🚫 Dislike {f2d_mode} aktif: {', '.join(dislikes_2d)}")
+
         if st.button("🎰 Jana Wheelpick", key="wp_run"):
             arah = "kiri" if arah_wp == "Kiri→Kanan" else "kanan"
             combos = generate_wheel_combos(base_wp, lot=lot, arah=arah)
             filtered = filter_wheel_combos(
                 combos, draws, no_repeat, no_triple, no_pair, no_ascend, use_history, sim_limit, likes, dislikes
             )
+            filtered = filter_by_2d1d(filtered, likes_2d, dislikes_2d)
             st.session_state["wp_combos_n"] = len(combos)
             st.session_state["wp_filtered"] = filtered
 
@@ -1653,7 +1691,7 @@ with tab_wheel:
                                 style=wbt_style,
                                 no_repeat=no_repeat, no_triple=no_triple, no_pair=no_pair,
                                 no_ascend=no_ascend, use_history=use_history, sim_limit=sim_limit,
-                                likes=likes, dislikes=dislikes,
+                                likes=likes, dislikes=dislikes, likes_2d=likes_2d, dislikes_2d=dislikes_2d,
                             )
                         if wbt_summary["base_penuh"] == 0:
                             st.warning("⚠️ Tiada draw dalam julat diuji yang base-nya match penuh — cuba tambah bilangan draw diuji.")
@@ -1707,7 +1745,7 @@ with tab_wheel:
                                     rounds=wbt_rounds,
                                     no_repeat=no_repeat, no_triple=no_triple, no_pair=no_pair,
                                     no_ascend=no_ascend, use_history=use_history, sim_limit=sim_limit,
-                                    likes=likes, dislikes=dislikes,
+                                    likes=likes, dislikes=dislikes, likes_2d=likes_2d, dislikes_2d=dislikes_2d,
                                 )
                             except ValueError as e:
                                 st.warning(f"⚠️ {e}")
