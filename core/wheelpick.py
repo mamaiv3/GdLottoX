@@ -87,6 +87,57 @@ def filter_wheel_combos(
     return out
 
 
+def _pattern_in_digits(pattern: str, digs: list[str]) -> bool:
+    """
+    True kalau SEMUA digit dalam `pattern` wujud dalam `digs`, ikut bilangan
+    (multiplicity) — cth pattern "33" perlukan DUA digit '3' dalam `digs`,
+    bukan cuma satu.
+    """
+    remaining = list(digs)
+    for ch in pattern:
+        if ch in remaining:
+            remaining.remove(ch)
+        else:
+            return False
+    return True
+
+
+def filter_by_2d1d(
+    combos: list[str],
+    likes: list[str] | None = None,
+    dislikes: list[str] | None = None,
+) -> list[str]:
+    """
+    Tapis kombinasi ("NNNN#####lot") ikut senarai corak nombor 1D (1 digit,
+    cth "3") atau 2D (2 digit, cth "36") — boleh campur bebas dalam satu
+    senarai.
+
+    Beza dgn penapis Like/Dislike biasa (yg semak SATU digit sahaja): corak
+    2D perlukan KEDUA-DUA digit wujud dlm kombinasi 4D tersebut (bukan
+    cuma salah satu) sebelum dikira "padan".
+
+    - `likes`  -- kombinasi mesti padan SEKURANG-KURANGNYA SATU corak dlm
+                  senarai ni (kalau senarai tak kosong).
+    - `dislikes` -- kombinasi DIBUANG kalau padan MANA-MANA corak dlm
+                  senarai ni.
+    """
+    likes = likes or []
+    dislikes = dislikes or []
+    if not likes and not dislikes:
+        return combos
+
+    out = []
+    for entry in combos:
+        num, _ = entry.split("#####")
+        digs = list(num)
+        if likes and not any(_pattern_in_digits(p, digs) for p in likes):
+            continue
+        if dislikes and any(_pattern_in_digits(p, digs) for p in dislikes):
+            continue
+        out.append(entry)
+    return out
+
+
 def score_combos_by_style(
     combos: list[str],
     draws: list[dict],
@@ -233,6 +284,8 @@ def backtest_wheelpick_topn(
     sim_limit: int = 4,
     likes: list[str] | None = None,
     dislikes: list[str] | None = None,
+    likes_2d: list[str] | None = None,
+    dislikes_2d: list[str] | None = None,
 ) -> tuple[list[dict], dict]:
     """
     Backtest EMPIRIKAL untuk Wheelpick + Top-N: bagi setiap draw yang
@@ -277,6 +330,7 @@ def backtest_wheelpick_topn(
             combos, past, no_repeat, no_triple, no_pair, no_ascend,
             use_history, sim_limit, likes, dislikes,
         )
+        filtered = filter_by_2d1d(filtered, likes_2d, dislikes_2d)
         if not filtered:
             continue
 
@@ -333,6 +387,8 @@ def recommend_top_n(
     sim_limit: int = 4,
     likes: list[str] | None = None,
     dislikes: list[str] | None = None,
+    likes_2d: list[str] | None = None,
+    dislikes_2d: list[str] | None = None,
 ) -> list[dict]:
     """
     Cadangan Top-N: bagi SETIAP top_n calon, jalankan backtest_wheelpick_topn
@@ -361,7 +417,7 @@ def recommend_top_n(
             gap_window=gap_window,
             no_repeat=no_repeat, no_triple=no_triple, no_pair=no_pair,
             no_ascend=no_ascend, use_history=use_history, sim_limit=sim_limit,
-            likes=likes, dislikes=dislikes,
+            likes=likes, dislikes=dislikes, likes_2d=likes_2d, dislikes_2d=dislikes_2d,
         )
         if summary["base_penuh"] == 0:
             continue
@@ -398,6 +454,8 @@ def compare_scoring_styles(
     sim_limit: int = 4,
     likes: list[str] | None = None,
     dislikes: list[str] | None = None,
+    likes_2d: list[str] | None = None,
+    dislikes_2d: list[str] | None = None,
 ) -> list[dict]:
     """
     Banding SEMUA gaya skor ("sum", "geometric", "voting", "overdue")
@@ -422,7 +480,7 @@ def compare_scoring_styles(
             gap_window=gap_window,
             no_repeat=no_repeat, no_triple=no_triple, no_pair=no_pair,
             no_ascend=no_ascend, use_history=use_history, sim_limit=sim_limit,
-            likes=likes, dislikes=dislikes,
+            likes=likes, dislikes=dislikes, likes_2d=likes_2d, dislikes_2d=dislikes_2d,
         )
         if summary["base_penuh"] == 0:
             continue
