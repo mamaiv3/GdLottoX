@@ -40,7 +40,12 @@ from core.formula_break import (
     recommend_recent_n,
     scan_digit_history,
 )
-from core.predictions_log import log_prediction, prediction_summary, reconcile_predictions
+from core.prediction_2d import (
+    MIN_TRAIN_DRAWS as P2D_MIN_TRAIN_DRAWS,
+    WEIGHT_CONFIGS as P2D_WEIGHT_CONFIGS,
+    compare_weight_configs,
+    generate_next_draw_top10,
+)
 from core.wheelpick import (
     backtest_wheelpick_topn,
     compare_scoring_styles,
@@ -811,6 +816,17 @@ def _cached_recommend_rank_range(_draws, cache_key, target, recent_n, width):
     return recommend_rank_range(_draws, target, recent_n=recent_n, width=width)
 
 
+@st.cache_data(show_spinner=False)
+def _cached_next_draw_top10(_draws, cache_key, weights_name):
+    weights = P2D_WEIGHT_CONFIGS.get(weights_name, P2D_WEIGHT_CONFIGS["WEIGHTS_V1"])
+    return generate_next_draw_top10(_draws, weights=weights, min_training_draws=P2D_MIN_TRAIN_DRAWS)
+
+
+@st.cache_data(show_spinner=False)
+def _cached_compare_weight_configs(_draws, cache_key):
+    return compare_weight_configs(_draws, min_training_draws=P2D_MIN_TRAIN_DRAWS)
+
+
 STYLE_RENDERERS = {
     "gold": ("Gold (Asal)", render_base_gold),
     "neon": ("Neon Arcade", render_base_neon),
@@ -940,33 +956,90 @@ with tab_dash:
 
     divider()
     section_title(
-        "📊", "Rekod Ramalan Sebenar",
-        "Trek rekod forward-looking sebenar — base yang <strong>betul-betul disimpan sebelum keputusan keluar</strong>, "
-        "bukan backtest yang jana semula ke belakang.",
+        "🎯", "TOP 10 RAMALAN 2D — NEXT DRAW",
+        "Ranking statistik drpd 9 feature corak sejarah (frequency, recency, position, trend, gap, "
+        "cluster, digit, transition, backtest) + walk-forward backtest jujur berbanding baseline rawak. "
+        "<strong>Ini BUKAN jaminan keputusan</strong> — GD Lotto ialah draw rawak &amp; bebas; alat ni "
+        "cuma ranking statistik sejarah, bukan ramalan pasti.",
     )
-    reconciled = reconcile_predictions(draws)
-    if not reconciled:
-        st.caption(
-            "Belum ada ramalan disimpan lagi. Pergi ke tab **🔮 Base**, jana base untuk tarikh akan datang, "
-            "lalu tekan **📌 Log Ramalan Ini** — nanti balik sini untuk semak keputusan sebenar."
+
+    if len(draws) < P2D_MIN_TRAIN_DRAWS + 1:
+        st.info(
+            f"ℹ️ Perlu sekurang-kurangnya {P2D_MIN_TRAIN_DRAWS + 1} draw utk Top 10 2D + backtest "
+            f"(ada {len(draws)}). Tambah draw di tab **📋 Data Draw**."
         )
     else:
-        summary = prediction_summary(reconciled)
+        dkey = _draws_cache_key(draws)
+        with st.spinner("Mengira walk-forward backtest & Top 10 2D (~10-15 saat kali pertama, selepas tu cache)..."):
+            p2d_result = _cached_next_draw_top10(draws, dkey, "WEIGHTS_V1")
+
+        for w in p2d_result.get("data_warnings", []):
+            st.warning(f"⚠️ {w}")
+
+        st.caption(
+            f"**Last Draw:** {p2d_result['source_last_draw_date']} — {p2d_result['source_last_draw_number']} "
+            f"&nbsp;|&nbsp; **Target:** NEXT DRAW &nbsp;|&nbsp; {p2d_result['total_draws_used']} draw digunakan"
+        )
+
+        bt = p2d_result["backtest_summary"]
+        lift = bt["lift_vs_baseline_pct"]
         st.markdown(
             card_grid([
-                card("✅ Selesai", f"{summary['decided']} / {summary['total']}"),
-                card("🎯 Match Penuh", str(summary["full_match"])),
-                card("📈 Kadar Match Penuh", f"{summary['rate']}%"),
-                card("⏳ Menunggu", str(summary["pending"])),
+                card("🧪 Round Diuji", str(bt["draws_tested"])),
+                card("🎯 Kadar Hit (Model)", f"{bt['hit_rate_pct']}%"),
+                card("🎲 Baseline Rawak", f"{bt['baseline_random_hit_rate_pct']}%"),
+                card("📈 Lift vs Baseline", f"{lift:+.2f}%" if lift is not None else "—"),
             ]),
             unsafe_allow_html=True,
         )
-        st.dataframe(pd.DataFrame(reconciled), use_container_width=True, hide_index=True)
-        st.caption(
-            "Nota: fail log ramalan ni (`data/predictions_log.json`) ada batasan simpanan yang sama "
-            "macam `data/draws.txt` — boleh hilang kalau environment Streamlit reset (redeploy), "
-            "melainkan awak commit/simpan fail tu semula secara manual."
+        st.markdown(
+            card_grid([
+                card("📬 Top10 Recall", f"{bt['top10_recall_pct']}%"),
+                card("↔️ Avg Rank bila Hit", str(bt["average_prediction_rank_when_hit"] or "—")),
+                card("🥇 Best Rank", str(bt["best_rank"] or "—")),
+                card("🥉 Worst Rank", str(bt["worst_rank"] or "—")),
+            ], min_width=110),
+            unsafe_allow_html=True,
         )
+        st.caption(
+            "**\"Baseline Rawak\"** = kebarangkalian TEPAT (formula probabilistik, bukan simulasi) Top-10 "
+            "RAWAK akan sekurang-kurangnya 1 hit, dikira atas round backtest yang SAMA (adil). "
+            "**\"Lift\"** hampir 0% (positif atau negatif) bermakna model ni tiada kelebihan sebenar drpd "
+            "tekaan rawak — jangkaan yang wajar utk draw yang benar-benar bebas."
+        )
+
+        top10_df = pd.DataFrame([
+            {
+                "Rank": r["rank"],
+                "2D": r["number"],
+                "Score": round(r["final_score"] * 100, 1),
+                "BT Rate": f"{r['backtest_hit_rate'] * 100:.1f}%",
+                "BT Samples": r["backtest_predictions"],
+                "Gap": r["current_gap"],
+            }
+            for r in p2d_result["top10"]
+        ])
+        st.dataframe(top10_df, use_container_width=True, hide_index=True)
+        st.code(" ".join(r["number"] for r in p2d_result["top10"]), language="text")
+
+        st.markdown(
+            '<div class="bc4d-note">Skor akhir gabungan 9 feature (WEIGHTS_V1) — ranking statistik sejarah '
+            'sahaja, <strong>bukan ramalan pasti</strong>. GD Lotto permainan nasib sepenuhnya; '
+            'mainlah secara bertanggungjawab &amp; ikut kemampuan sendiri.</div>',
+            unsafe_allow_html=True,
+        )
+
+        with st.expander("⚙️ Banding Weight Config — WEIGHTS_V1 / V2 / V3 (backtest 3×, lebih lama)"):
+            st.caption(
+                "Setiap config diuji penuh secara walk-forward, dibahagi validation (separuh awal) vs "
+                "test (separuh akhir) — config dipilih guna validation, keputusan akhir dilapor guna test, "
+                "supaya pemilihan weight tidak 'curang' atas data yang sama yang dilaporkan."
+            )
+            if st.button("🔬 Jalankan Perbandingan", key="p2d_compare_btn"):
+                with st.spinner("Menjalankan walk-forward backtest utk 3 config (~30-45 saat)..."):
+                    comparison = _cached_compare_weight_configs(draws, dkey)
+                st.dataframe(pd.DataFrame(comparison["per_config"]).T, use_container_width=True)
+                st.caption(f"Dipilih ikut validation: **{comparison['selected_by_validation']}**")
 
 # ===================================================================== BASE ===
 with tab_base:
@@ -1104,14 +1177,6 @@ with tab_base:
                     digit_chips(actual_draw["number"], flags)
                 else:
                     st.caption(f"ℹ️ Belum ada keputusan direkod untuk {target_date_str} — base ini jana sebagai unjuran.")
-                    known_dates = {d["date"] for d in draws}
-                    if st.button("📌 Log Ramalan Ini (Forward-Looking)", key="log_pred_btn"):
-                        ok, msg = log_prediction(target_date_str, base, recent_n, rank_range, "Base Tab", known_dates)
-                        (st.success if ok else st.error)(msg)
-                    st.caption(
-                        "Simpan base ni SEKARANG (sblm keputusan keluar) — nanti boleh semak trek rekod sebenar "
-                        "di tab **📊 Dashboard**, bahagian \"Rekod Ramalan Sebenar\"."
-                    )
 
                 # ---- 5. Kad Kongsi (gambar shareable) ----
                 with st.expander("🎴 Jana Kad Kongsi (Gambar)"):
