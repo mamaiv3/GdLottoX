@@ -4,6 +4,8 @@ Aplikasi web **Streamlit** untuk analisis corak & jana cadangan nombor **GD Lott
 (Malaysia), berdasarkan kaedah statistik kekerapan digit (**Formula Break**) dan
 penjana kombinasi (**Wheelpick**).
 
+https://gdlottox-3qwygdga3lcnsyjfd2mv7u.streamlit.app/
+
 Ini adalah versi **bersih & fokus** daripada projek asal `gdlotto4d`. Strategi lain
 (frequency, hybrid, polarity_shift, smartpattern, hitfq), modul AI, cross-analysis,
 superbase, dan pautan promosi telah dibuang. Yang tinggal hanya perkara teras:
