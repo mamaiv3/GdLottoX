@@ -803,32 +803,43 @@ def render_base_soft(base, rank_start, rank_end, kombinasi, date_label, result_h
 
 
 # ------------------------------------------------------------- CLASSIC ----
-def _gen_classic_numbers() -> tuple[list[str], list[str], list[str]]:
-    """Jana nombor RAWAK utk kad gaya 'Classic Result':
-    - 13 nombor 'Special pool' dijana rawak (unik).
-    - 3 drpd 13 tu dipilih rawak jadi 'Base Number 1/2/3'.
-    - Baki 10 kekal dipaparkan sbg 'Special'.
-    - 10 nombor lain (unik, x overlap) dijana berasingan sbg 'Consolation'.
-    Jumlah = 23 nombor unik. Ini SEMATA-MATA rawak (bukan drpd engine Formula
-    Break / statistik draw sebenar) — utk kad hiasan/santai sahaja.
+def _gen_classic_numbers(pool_numbers: list[str] | None = None) -> tuple[list[str], list[str], list[str]]:
+    """Susun nombor utk kad gaya 'Classic Result':
+    - Kalau `pool_numbers` (nombor SEBENAR drpd Wheelpick/Formula Break utk
+      Base & tarikh draw semasa, disusun ikut skor) ada sekurang2nya 23 entri
+      unik, GUNA terus 23 teratas tu — supaya kad ni SELARI dgn Base hari
+      tersebut (bukan nombor lain yg tak berkaitan).
+    - Kalau data x cukup (jarang berlaku), fallback rawak penuh 0000-9999
+      supaya kad tetap boleh dijana.
+    13 nombor teratas jadi 'Special pool'; 3 drpd 13 tu dipilih RAWAK jadi
+    'Base Number 1/2/3' (kedudukan mana yg 'naik' sahaja yg rawak, bukan
+    nombor²nya); baki 10 dipaparkan sbg 'Special'; 10 seterusnya jadi
+    'Consolation'.
     """
-    pool = random.sample(range(10000), 23)
-    special_pool, consolation_pool = pool[:13], pool[13:]
+    unique_pool = list(dict.fromkeys(pool_numbers or []))  # buang duplikat, kekalkan urutan skor
+    if len(unique_pool) >= 23:
+        chosen = unique_pool[:23]
+        special_pool, consolation_pool = chosen[:13], chosen[13:23]
+    else:
+        rand_pool = [f"{n:04d}" for n in random.sample(range(10000), 23)]
+        special_pool, consolation_pool = rand_pool[:13], rand_pool[13:]
+
     base_trio = set(random.sample(special_pool, 3))
     base_numbers = [n for n in special_pool if n in base_trio]
     special_numbers = [n for n in special_pool if n not in base_trio]
-    fmt = lambda n: f"{n:04d}"
-    return (
-        [fmt(n) for n in base_numbers],
-        [fmt(n) for n in special_numbers],
-        [fmt(n) for n in consolation_pool],
-    )
+    return base_numbers, special_numbers, consolation_pool
 
 
-def render_base_classic(date_label: str, result_handle: str = "@Breakcode4d", full_date=None) -> bytes:
+def render_base_classic(
+    date_label: str,
+    result_handle: str = "@Breakcode4d",
+    full_date=None,
+    pool_numbers: list[str] | None = None,
+) -> bytes:
     """Kad gaya 'keputusan klasik' (ilham papan 4D biasa — 1st/2nd/3rd + Special +
     Consolation) tapi dibrandkan Breakcode 4D & label ditukar jadi 'Base Number'
-    (sbb bukan keputusan rasmi). SEMUA nombor dijana rawak — lihat _gen_classic_numbers().
+    (sbb bukan keputusan rasmi). Nombor diambil drpd skor Wheelpick/Formula
+    Break SEBENAR utk Base semasa (bukan rawak) — lihat _gen_classic_numbers().
     """
     W, H = 1000, 1550
     RED = (196, 30, 37)
@@ -838,7 +849,7 @@ def render_base_classic(date_label: str, result_handle: str = "@Breakcode4d", fu
     MUTED = (120, 120, 120)
     BLACK_TXT = (20, 20, 20)
 
-    base_numbers, special_numbers, consolation_numbers = _gen_classic_numbers()
+    base_numbers, special_numbers, consolation_numbers = _gen_classic_numbers(pool_numbers)
 
     img = Image.new("RGB", (W, H), WHITE)
     draw = ImageDraw.Draw(img)
@@ -935,7 +946,7 @@ def render_base_classic(date_label: str, result_handle: str = "@Breakcode4d", fu
     # ---- Caption / disclaimer (konsisten dgn style lain dlm app ni, word-wrap ikut lebar kad) ----
     y += 34
     caption_1 = (
-        "Base Number & Special dijana rawak untuk santai/rujukan sahaja \u2014 "
+        "Base Number & Special ikut skor corak Formula Break/Wheelpick semasa \u2014 "
         "bukan keputusan rasmi mana-mana loteri."
     )
     caption_2 = "4D permainan nasib, mainlah secara bertanggungjawab."
@@ -994,11 +1005,11 @@ STYLE_RENDERERS = {
 }
 
 
-def render_base_image(style, base, rank_start, rank_end, kombinasi, date_label, result_handle="@Breakcode4d", hot_digits=None, top10_numbers=None, full_date=None):
+def render_base_image(style, base, rank_start, rank_end, kombinasi, date_label, result_handle="@Breakcode4d", hot_digits=None, top10_numbers=None, full_date=None, pool_numbers=None):
     if style == "classic":
-        # Kad "Classic Result" ada signature sendiri (nombor dijana rawak dlm fungsi
-        # tu sendiri, bukan drpd base/kombinasi/top10 engine) — bypass fn() generik.
-        return render_base_classic(date_label, result_handle, full_date)
+        # Kad "Classic Result" ada signature sendiri (perlu senarai skor lagi
+        # panjang — 23 — drpd Top 10 biasa) — bypass fn() generik.
+        return render_base_classic(date_label, result_handle, full_date, pool_numbers)
     _, fn = STYLE_RENDERERS.get(style, STYLE_RENDERERS["gold"])
     return fn(base, rank_start, rank_end, kombinasi, date_label, result_handle, hot_digits, top10_numbers)
 
@@ -1369,9 +1380,18 @@ with tab_base:
                     # secara berasingan — lebih tepat sbb dah kira skor kombinasi sebenar.
                     kombinasi_utama = top10[0]["Nombor"] if top10 else "".join(p[0] for p in base)
 
+                    # Kad "Classic Result" perlukan 23 nombor (bukan 10) supaya Base
+                    # Number/Special/Consolation semua SELARI dgn Base hari tersebut —
+                    # kira sekali sahaja, hanya bila style ni dipilih.
+                    classic_pool_numbers = None
+                    if card_style == "classic":
+                        top23 = rank_combos(combos, draws_asof, recent_n=card_score_n, top_n=23)
+                        classic_pool_numbers = [r["Nombor"] for r in top23]
+
                     png_bytes = render_base_image(
                         card_style, base, rank_start, rank_end, kombinasi_utama, date_label,
                         card_result_handle, hot_digits, top10_numbers, full_date=target_date,
+                        pool_numbers=classic_pool_numbers,
                     )
                     st.image(png_bytes, use_container_width=True)
                     st.download_button(
