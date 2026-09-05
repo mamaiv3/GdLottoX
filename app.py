@@ -8,6 +8,7 @@ Fokus penuh pada:
 """
 
 import io
+import random
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -801,6 +802,161 @@ def render_base_soft(base, rank_start, rank_end, kombinasi, date_label, result_h
     return buf.getvalue()
 
 
+# ------------------------------------------------------------- CLASSIC ----
+def _gen_classic_numbers() -> tuple[list[str], list[str], list[str]]:
+    """Jana nombor RAWAK utk kad gaya 'Classic Result':
+    - 13 nombor 'Special pool' dijana rawak (unik).
+    - 3 drpd 13 tu dipilih rawak jadi 'Base Number 1/2/3'.
+    - Baki 10 kekal dipaparkan sbg 'Special'.
+    - 10 nombor lain (unik, x overlap) dijana berasingan sbg 'Consolation'.
+    Jumlah = 23 nombor unik. Ini SEMATA-MATA rawak (bukan drpd engine Formula
+    Break / statistik draw sebenar) — utk kad hiasan/santai sahaja.
+    """
+    pool = random.sample(range(10000), 23)
+    special_pool, consolation_pool = pool[:13], pool[13:]
+    base_trio = set(random.sample(special_pool, 3))
+    base_numbers = [n for n in special_pool if n in base_trio]
+    special_numbers = [n for n in special_pool if n not in base_trio]
+    fmt = lambda n: f"{n:04d}"
+    return (
+        [fmt(n) for n in base_numbers],
+        [fmt(n) for n in special_numbers],
+        [fmt(n) for n in consolation_pool],
+    )
+
+
+def render_base_classic(date_label: str, result_handle: str = "@Breakcode4d", full_date=None) -> bytes:
+    """Kad gaya 'keputusan klasik' (ilham papan 4D biasa — 1st/2nd/3rd + Special +
+    Consolation) tapi dibrandkan Breakcode 4D & label ditukar jadi 'Base Number'
+    (sbb bukan keputusan rasmi). SEMUA nombor dijana rawak — lihat _gen_classic_numbers().
+    """
+    W, H = 1000, 1550
+    RED = (196, 30, 37)
+    DARK = (24, 24, 24)
+    WHITE = (255, 255, 255)
+    GRAY_LINE = (210, 210, 210)
+    MUTED = (120, 120, 120)
+    BLACK_TXT = (20, 20, 20)
+
+    base_numbers, special_numbers, consolation_numbers = _gen_classic_numbers()
+
+    img = Image.new("RGB", (W, H), WHITE)
+    draw = ImageDraw.Draw(img)
+
+    margin = 36
+    _rounded(draw, (margin, margin, W - margin, H - margin), 20, outline=GRAY_LINE, width=2)
+
+    f_brand = _font("Outfit-Bold.ttf", 44)
+    f_seal = _font("Outfit-Bold.ttf", 30)
+    f_date = _font("Outfit-Regular.ttf", 26)
+    f_section = _font("Outfit-Bold.ttf", 26)
+    f_label = _font("Outfit-Bold.ttf", 22)
+    f_num_big = _font("JetBrainsMono-Bold.ttf", 50)
+    f_num_grid = _font("JetBrainsMono-Bold.ttf", 32)
+    f_dash = _font("JetBrainsMono-Bold.ttf", 28)
+    f_caption = _font("Outfit-Regular.ttf", 20)
+    f_pill = _font("Outfit-Bold.ttf", 24)
+
+    inner_x0, inner_x1 = margin + 20, W - margin - 20
+    table_x0, table_x1 = inner_x0, inner_x1
+
+    # ---- Header (red band, brand) ----
+    header_y0 = margin + 16
+    header_h = 140
+    header_y1 = header_y0 + header_h
+    _rounded(draw, (inner_x0, header_y0, inner_x1, header_y1), 18, fill=RED)
+
+    seal_cx, seal_cy, seal_r = inner_x0 + 90, (header_y0 + header_y1) / 2, 50
+    draw.ellipse((seal_cx - seal_r, seal_cy - seal_r, seal_cx + seal_r, seal_cy + seal_r), fill=WHITE)
+    _center_text(draw, seal_cx, seal_cy + 2, "4D", f_seal, RED)
+    draw.text(
+        (seal_cx + 90, (header_y0 + header_y1) / 2 + 2), "Breakcode 4D",
+        font=f_brand, fill=WHITE, anchor="lm",
+    )
+
+    # ---- Date ----
+    y = header_y1 + 30
+    if full_date is not None:
+        try:
+            date_str = f"{full_date.strftime('%d-%m-%Y')} ({full_date.strftime('%a')})"
+        except Exception:
+            date_str = date_label
+    else:
+        date_str = date_label
+    draw.text((inner_x0, y), f"Date: {date_str}", font=f_date, fill=BLACK_TXT, anchor="lt")
+
+    # ---- Base Number table (3 baris — GANTI label 1st/2nd/3rd Prize) ----
+    y += 54
+    row_h = 96
+    label_w = 340
+    table_top = y
+    base_labels = ["Base Number 1", "Base Number 2", "Base Number 3"]
+    for i, (lbl, num) in enumerate(zip(base_labels, base_numbers)):
+        ry0 = table_top + i * row_h
+        ry1 = ry0 + row_h
+        draw.rectangle((table_x0, ry0, table_x0 + label_w, ry1), fill=DARK)
+        _center_text(draw, table_x0 + label_w / 2, (ry0 + ry1) / 2 + 2, lbl, f_label, WHITE)
+        draw.rectangle((table_x0 + label_w, ry0, table_x1, ry1), outline=GRAY_LINE, width=2)
+        _center_text(draw, (table_x0 + label_w + table_x1) / 2, (ry0 + ry1) / 2 + 2, num, f_num_big, BLACK_TXT)
+    table_bottom = table_top + row_h * 3
+    draw.rectangle((table_x0, table_top, table_x1, table_bottom), outline=GRAY_LINE, width=2)
+
+    def _section(y_start: float, title: str, numbers: list[str], blanks_mask, rows: int, cols: int) -> float:
+        sy0 = y_start
+        sh = 56
+        draw.rectangle((table_x0, sy0, table_x1, sy0 + sh), fill=DARK)
+        _center_text(draw, (table_x0 + table_x1) / 2, sy0 + sh / 2 + 2, title, f_section, WHITE)
+        grid_y0 = sy0 + sh
+        cell_w = (table_x1 - table_x0) / cols
+        cell_h = 100
+        idx = 0
+        for r in range(rows):
+            for c in range(cols):
+                cx0, cx1 = table_x0 + c * cell_w, table_x0 + (c + 1) * cell_w
+                cy0, cy1 = grid_y0 + r * cell_h, grid_y0 + (r + 1) * cell_h
+                filled = blanks_mask[r][c] if blanks_mask else True
+                draw.rectangle((cx0, cy0, cx1, cy1), outline=GRAY_LINE, width=1)
+                if filled:
+                    _center_text(draw, (cx0 + cx1) / 2, (cy0 + cy1) / 2 + 2, numbers[idx], f_num_grid, BLACK_TXT)
+                    idx += 1
+                else:
+                    _center_text(draw, (cx0 + cx1) / 2, (cy0 + cy1) / 2 + 2, "----", f_dash, MUTED)
+        return grid_y0 + rows * cell_h
+
+    # ---- Special: 10 dipaparkan (13 dijana, 3 dah "naik" jadi Base Number) ----
+    y = table_bottom + 30
+    special_mask = [[0, 1, 1, 1, 0], [1, 1, 1, 0, 1], [0, 1, 1, 1, 0]]
+    y = _section(y, "SPECIAL", special_numbers, special_mask, rows=3, cols=5)
+
+    # ---- Consolation: 10, grid penuh ----
+    y += 30
+    y = _section(y, "CONSOLATION", consolation_numbers, None, rows=2, cols=5)
+
+    # ---- Caption / disclaimer (konsisten dgn style lain dlm app ni, word-wrap ikut lebar kad) ----
+    y += 34
+    caption_1 = (
+        "Base Number & Special dijana rawak untuk santai/rujukan sahaja \u2014 "
+        "bukan keputusan rasmi mana-mana loteri."
+    )
+    caption_2 = "4D permainan nasib, mainlah secara bertanggungjawab."
+    for line in _wrap_csv(draw, caption_1.split(" "), f_caption, table_x1 - table_x0, sep=" "):
+        draw.text((table_x0, y), line, font=f_caption, fill=MUTED, anchor="lt")
+        y += 26
+    for line in _wrap_csv(draw, caption_2.split(" "), f_caption, table_x1 - table_x0, sep=" "):
+        draw.text((table_x0, y), line, font=f_caption, fill=MUTED, anchor="lt")
+        y += 26
+
+    # ---- Result handle pill ----
+    y += 20
+    pill_h = 58
+    _rounded(draw, (table_x0, y, table_x1, y + pill_h), 29, outline=DARK, width=2)
+    _center_text(draw, (table_x0 + table_x1) / 2, y + pill_h / 2 + 2, f"Result Channel: {result_handle}", f_pill, DARK)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def _draws_cache_key(draws: list[dict]) -> tuple:
     """Kunci cache mudah drpd senarai draws — cukup sbb draws hanya berubah bila fail draws.txt berubah."""
     return (len(draws), draws[-1]["date"] if draws else None, draws[-1]["number"] if draws else None)
@@ -834,10 +990,15 @@ STYLE_RENDERERS = {
     "casino": ("Emerald Casino", render_base_casino),
     "ticket": ("Retro Ticket", render_base_ticket),
     "soft": ("Soft Neumorphic", render_base_soft),
+    "classic": ("Classic Result (Breakcode 4D)", render_base_classic),
 }
 
 
-def render_base_image(style, base, rank_start, rank_end, kombinasi, date_label, result_handle="@Breakcode4d", hot_digits=None, top10_numbers=None):
+def render_base_image(style, base, rank_start, rank_end, kombinasi, date_label, result_handle="@Breakcode4d", hot_digits=None, top10_numbers=None, full_date=None):
+    if style == "classic":
+        # Kad "Classic Result" ada signature sendiri (nombor dijana rawak dlm fungsi
+        # tu sendiri, bukan drpd base/kombinasi/top10 engine) — bypass fn() generik.
+        return render_base_classic(date_label, result_handle, full_date)
     _, fn = STYLE_RENDERERS.get(style, STYLE_RENDERERS["gold"])
     return fn(base, rank_start, rank_end, kombinasi, date_label, result_handle, hot_digits, top10_numbers)
 
@@ -1210,7 +1371,7 @@ with tab_base:
 
                     png_bytes = render_base_image(
                         card_style, base, rank_start, rank_end, kombinasi_utama, date_label,
-                        card_result_handle, hot_digits, top10_numbers,
+                        card_result_handle, hot_digits, top10_numbers, full_date=target_date,
                     )
                     st.image(png_bytes, use_container_width=True)
                     st.download_button(
