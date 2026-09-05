@@ -812,7 +812,7 @@ def _gen_classic_numbers(pool_numbers: list[str] | None = None) -> tuple[list[st
     - Kalau data x cukup (jarang berlaku), fallback rawak penuh 0000-9999
       supaya kad tetap boleh dijana.
     13 nombor teratas jadi 'Special pool'; 3 drpd 13 tu dipilih RAWAK jadi
-    'Base Number 1/2/3' (kedudukan mana yg 'naik' sahaja yg rawak, bukan
+    'Top Pick 1st/2nd/3rd' (kedudukan mana yg 'naik' sahaja yg rawak, bukan
     nombor²nya); baki 10 dipaparkan sbg 'Special'; 10 seterusnya jadi
     'Consolation'.
     """
@@ -837,7 +837,7 @@ def render_base_classic(
     pool_numbers: list[str] | None = None,
 ) -> bytes:
     """Kad gaya 'keputusan klasik' (ilham papan 4D biasa — 1st/2nd/3rd + Special +
-    Consolation) tapi dibrandkan Breakcode 4D & label ditukar jadi 'Base Number'
+    Consolation) tapi dibrandkan Breakcode 4D & label ditukar jadi 'Top Pick 1st/2nd/3rd'
     (sbb bukan keputusan rasmi). Nombor diambil drpd skor Wheelpick/Formula
     Break SEBENAR utk Base semasa (bukan rawak) — lihat _gen_classic_numbers().
     """
@@ -896,12 +896,12 @@ def render_base_classic(
         date_str = date_label
     draw.text((inner_x0, y), f"Date: {date_str}", font=f_date, fill=BLACK_TXT, anchor="lt")
 
-    # ---- Base Number table (3 baris — GANTI label 1st/2nd/3rd Prize) ----
+    # ---- Top Pick table (3 baris — GANTI label 1st/2nd/3rd Prize) ----
     y += 54
     row_h = 96
     label_w = 340
     table_top = y
-    base_labels = ["Base Number 1", "Base Number 2", "Base Number 3"]
+    base_labels = ["Top Pick 1st", "Top Pick 2nd", "Top Pick 3rd"]
     for i, (lbl, num) in enumerate(zip(base_labels, base_numbers)):
         ry0 = table_top + i * row_h
         ry1 = ry0 + row_h
@@ -934,7 +934,7 @@ def render_base_classic(
                     _center_text(draw, (cx0 + cx1) / 2, (cy0 + cy1) / 2 + 2, "----", f_dash, MUTED)
         return grid_y0 + rows * cell_h
 
-    # ---- Special: 10 dipaparkan (13 dijana, 3 dah "naik" jadi Base Number) ----
+    # ---- Special: 10 dipaparkan (13 dijana, 3 dah "naik" jadi Top Pick) ----
     y = table_bottom + 30
     special_mask = [[0, 1, 1, 1, 0], [1, 1, 1, 0, 1], [0, 1, 1, 1, 0]]
     y = _section(y, "SPECIAL", special_numbers, special_mask, rows=3, cols=5)
@@ -946,7 +946,7 @@ def render_base_classic(
     # ---- Caption / disclaimer (konsisten dgn style lain dlm app ni, word-wrap ikut lebar kad) ----
     y += 34
     caption_1 = (
-        "Base Number & Special ikut skor corak Formula Break/Wheelpick semasa \u2014 "
+        "Top Pick & Special ikut skor corak Formula Break/Wheelpick semasa \u2014 "
         "bukan keputusan rasmi mana-mana loteri."
     )
     caption_2 = "4D permainan nasib, mainlah secara bertanggungjawab."
